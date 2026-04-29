@@ -1,8 +1,10 @@
 "use client";
 
 import type React from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { SignInPage, type Testimonial } from "@/components/ui/sign-in";
+import { flaskRequest } from "@/lib/flask-api";
 
 const sampleTestimonials: Testimonial[] = [
   {
@@ -27,16 +29,31 @@ const sampleTestimonials: Testimonial[] = [
 
 export default function SignInRoute() {
   const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSignIn = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSignIn = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     console.log("Sign In submitted:", Object.fromEntries(formData.entries()));
-    router.push("/user-profile");
+    setError(null);
+
+    try {
+      await flaskRequest({ path: "/api/users" });
+      router.push("/user-profile");
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Failed to reach Flask backend."
+      );
+    }
   };
 
   return (
     <div className="bg-background text-foreground">
+      {error && (
+        <p className="px-4 pt-4 text-center text-sm text-rose-400">{error}</p>
+      )}
       <SignInPage
         heroImageSrc="https://images.unsplash.com/photo-1642615835477-d303d7dc9ee9?w=2160&q=80"
         testimonials={sampleTestimonials}

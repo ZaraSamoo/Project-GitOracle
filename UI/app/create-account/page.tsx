@@ -1,11 +1,14 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Sparkles } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
+import { flaskRequest } from "@/lib/flask-api";
 
 export default function CreateAccountPage() {
   const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
 
   return (
     <div className="min-h-screen bg-black text-white">
@@ -22,9 +25,19 @@ export default function CreateAccountPage() {
         <section className="grid gap-8 lg:grid-cols-2">
           <form
             className="rounded-2xl border border-white/10 bg-zinc-950/60 p-6"
-            onSubmit={(event) => {
+            onSubmit={async (event) => {
               event.preventDefault();
-              router.push("/user-profile");
+              setError(null);
+              try {
+                await flaskRequest({ path: "/api/users" });
+                router.push("/user-profile");
+              } catch (requestError) {
+                setError(
+                  requestError instanceof Error
+                    ? requestError.message
+                    : "Failed to reach Flask backend."
+                );
+              }
             }}
           >
             <div className="space-y-4">
@@ -51,6 +64,7 @@ export default function CreateAccountPage() {
               Create Account
               <ArrowRight className="h-4 w-4" />
             </button>
+            {error && <p className="mt-3 text-sm text-rose-300">{error}</p>}
           </form>
 
           <div className="rounded-2xl border border-violet-400/30 bg-gradient-to-br from-violet-500/15 via-fuchsia-500/10 to-cyan-500/15 p-6">

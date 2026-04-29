@@ -1,15 +1,18 @@
-# Python bytecode
+# Next.js / Node
+node_modules/
+.next/
+out/
+build/
+
+# Python
 __pycache__/
-*.pyc
-
-# Virtual environment
+*.py[cod]
+*$py.class
 venv/
-env/
-
-# Database (if using SQLite for local testing)
-*.db
-instance/
-
-# Secrets
 .env
-config.py
+
+# Database/IDE
+*.sqlite3
+.vscode/
+.idea/
+.DS_Store
