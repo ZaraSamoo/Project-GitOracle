@@ -1,4 +1,5 @@
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
+from sqlalchemy import or_
 from sqlalchemy.exc import SQLAlchemyError
 
 from extensions import db
@@ -6,11 +7,23 @@ from extensions import db
 api_bp = Blueprint("api_bp", __name__)
 
 
+def resolve_html_url(repo):
+    html_url = (repo.html_url or "").strip() if repo.html_url else ""
+    if html_url.startswith("https://github.com/"):
+        return html_url
+
+    full_name = (repo.full_name or "").strip() if repo.full_name else ""
+    if "/" in full_name:
+        return f"https://github.com/{full_name}"
+
+    return None
+
+
 @api_bp.route("/users", methods=["GET"])
 def get_users():
     from models import User
 
-    users = User.query.all()
+    users = User.query.order_by(User.created_at.desc()).limit(50).all()
     return jsonify(
         {
             "count": len(users),
@@ -32,7 +45,7 @@ def get_users():
 def get_repositories():
     from models import Repository
 
-    repositories = Repository.query.order_by(Repository.stars.desc()).all()
+    repositories = Repository.query.order_by(Repository.stars.desc()).limit(100).all()
     return jsonify(
         {
             "count": len(repositories),
@@ -60,7 +73,7 @@ def get_repositories():
 def get_issues():
     from models import Issue
 
-    issues = Issue.query.filter_by(state="open").all()
+    issues = Issue.query.filter_by(state="open").order_by(Issue.created_at.desc()).limit(100).all()
     return jsonify(
         {
             "count": len(issues),
@@ -128,7 +141,7 @@ def get_recommendations():
     from models import Recommendation
 
     try:
-        recommendations = Recommendation.query.order_by(Recommendation.score.desc()).all()
+        recommendations = Recommendation.query.order_by(Recommendation.score.desc()).limit(100).all()
     except SQLAlchemyError as error:
         return jsonify(
             {
@@ -155,6 +168,45 @@ def get_recommendations():
                     else None,
                 }
                 for recommendation in recommendations
+            ],
+        }
+    )
+
+
+@api_bp.route("/search", methods=["GET"])
+def search_repositories():
+    from models import Repository
+
+    query = request.args.get("q", "").strip()
+    if not query:
+        return jsonify({"count": 0, "results": []})
+
+    pattern = f"%{query}%"
+    repositories = (
+        Repository.query.filter(
+            or_(
+                Repository.full_name.ilike(pattern),
+                Repository.description.ilike(pattern),
+            )
+        )
+        .order_by(Repository.stars.desc())
+        .limit(20)
+        .all()
+    )
+
+    return jsonify(
+        {
+            "count": len(repositories),
+            "results": [
+                {
+                    "repo_id": repo.repo_id,
+                    "full_name": repo.full_name,
+                    "description": repo.description,
+                    "stars": repo.stars,
+                    "language": repo.language,
+                    "html_url": resolve_html_url(repo),
+                }
+                for repo in repositories
             ],
         }
     )

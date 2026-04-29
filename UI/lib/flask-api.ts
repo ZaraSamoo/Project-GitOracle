@@ -8,18 +8,39 @@ const SERVER_FLASK_BASE_URL =
 
 type ApiRequestOptions = RequestInit & {
   path: string;
+  timeoutMs?: number;
 };
 
-export async function flaskRequest<T>({ path, ...init }: ApiRequestOptions): Promise<T> {
+const DEFAULT_TIMEOUT_MS = 2500;
+
+export async function flaskRequest<T>({
+  path,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+  ...init
+}: ApiRequestOptions): Promise<T> {
   const baseUrl = typeof window === "undefined" ? SERVER_FLASK_BASE_URL : CLIENT_FLASK_BASE_URL;
-  const response = await fetch(`${baseUrl}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init.headers ?? {}),
-    },
-    cache: "no-store",
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}${path}`, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...(init.headers ?? {}),
+      },
+      cache: "no-store",
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error(`Flask request timed out after ${timeoutMs}ms: ${path}`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (!response.ok) {
     const body = await response.text();

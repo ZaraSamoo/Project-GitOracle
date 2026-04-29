@@ -5,52 +5,48 @@ import { AppHeader } from "@/components/app-header";
 import { PromptInputBox } from "@/components/ui/ai-prompt-box";
 import { flaskRequest } from "@/lib/flask-api";
 
-interface RecommendationResponse {
+interface SearchResponse {
   count: number;
-  recommendations: Array<{
-    user_id: number;
-    issue_id: number;
-    score: number;
-    generated_at: string;
-  }>;
-}
-
-interface IssuesResponse {
-  count: number;
-  issues: Array<{
-    issue_id: number;
-    title: string;
+  results: Array<{
     repo_id: number;
-    complexity: number | null;
-    estimated_time: number | null;
+    full_name: string;
+    description: string | null;
+    stars: number;
+    language: string | null;
+    html_url: string | null;
   }>;
 }
 
 export default function FindProjectsPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [recommendations, setRecommendations] = useState<RecommendationResponse["recommendations"]>([]);
-  const [fallbackIssues, setFallbackIssues] = useState<IssuesResponse["issues"]>([]);
+  const [projects, setProjects] = useState<SearchResponse["results"]>([]);
+  const [query, setQuery] = useState("");
 
-  const fetchRecommendations = async () => {
+  const searchProjects = async (rawQuery: string) => {
+    const trimmedQuery = rawQuery.trim();
+    if (!trimmedQuery) {
+      setProjects([]);
+      setError("Please type a search term.");
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
-    setFallbackIssues([]);
     try {
-      const data = await flaskRequest<RecommendationResponse>({ path: "/api/recommendations" });
-      setRecommendations(data.recommendations);
-    } catch {
-      try {
-        const issueData = await flaskRequest<IssuesResponse>({ path: "/api/issues" });
-        setRecommendations([]);
-        setFallbackIssues(issueData.issues);
-      } catch (requestError) {
-        setError(
-          requestError instanceof Error
-            ? requestError.message
-            : "Failed to fetch data from Flask API."
-        );
-      }
+      const data = await flaskRequest<SearchResponse>({
+        path: `/api/search?q=${encodeURIComponent(trimmedQuery)}`,
+        timeoutMs: 4000,
+      });
+      setProjects(data.results);
+      setQuery(trimmedQuery);
+    } catch (requestError) {
+      setProjects([]);
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Failed to fetch search results from Flask API."
+      );
     } finally {
       setIsLoading(false);
     }
@@ -69,56 +65,61 @@ export default function FindProjectsPage() {
         <section className="mt-8 rounded-3xl border border-white/10 bg-gradient-to-br from-zinc-950 via-violet-950/20 to-cyan-950/20 p-5 md:p-8">
           <div className="mx-auto max-w-3xl">
             <PromptInputBox
-              placeholder="Example: I have 6 hours this week and want a Python data project with clear milestones."
+              placeholder="Search repositories by name or description (e.g. react, flask, machine learning)"
               isLoading={isLoading}
               onSend={async (message, files) => {
-                console.log("Find Projects prompt:", message, files);
-                await fetchRecommendations();
+                // PromptInputBox already prevents default Enter submit in its key handler.
+                console.log("Find Projects search:", message, files);
+                await searchProjects(message);
               }}
             />
           </div>
         </section>
 
         <section className="mt-8 rounded-3xl border border-white/10 bg-zinc-950/60 p-5 md:p-8">
-          <h2 className="text-xl font-semibold">Flask Recommendations</h2>
+          <h2 className="text-xl font-semibold">Database Search Results</h2>
           <p className="mt-2 text-sm text-zinc-400">
-            This section now reads recommendation data from your Flask backend.
+            Searches your Flask `repositories` table via `/api/search`.
           </p>
+          {isLoading && <p className="mt-4 text-sm text-cyan-300">Loading results...</p>}
           {error && <p className="mt-4 text-sm text-rose-300">{error}</p>}
-          {!error && recommendations.length === 0 && (
+          {!error && !isLoading && projects.length === 0 && (
             <p className="mt-4 text-sm text-zinc-400">
-              Send a prompt to fetch recommendations from `/api/recommendations`.
+              Enter a query and press Enter to search your database.
             </p>
           )}
-          {recommendations.length > 0 && (
+          {!isLoading && projects.length > 0 && (
             <ul className="mt-4 space-y-2 text-sm">
-              {recommendations.map((rec) => (
+              {projects.map((project) => (
                 <li
-                  key={`${rec.user_id}-${rec.issue_id}`}
+                  key={project.repo_id}
                   className="rounded-xl border border-white/10 bg-black/30 px-4 py-3"
                 >
-                  User {rec.user_id} {"->"} Issue {rec.issue_id} (score {rec.score.toFixed(2)})
+                  <p className="font-medium">{project.full_name}</p>
+                  <p className="text-zinc-400">
+                    {project.language ?? "Unknown"} - {project.stars.toLocaleString()} stars
+                  </p>
+                  {project.description && (
+                    <p className="mt-1 text-zinc-300">{project.description}</p>
+                  )}
+                  {project.html_url && (
+                    <a
+                      href={project.html_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-2 inline-block text-cyan-300 hover:underline"
+                    >
+                      Open Repository
+                    </a>
+                  )}
                 </li>
               ))}
             </ul>
           )}
-          {fallbackIssues.length > 0 && (
-            <div className="mt-4">
-              <p className="text-sm text-amber-300">
-                `/api/recommendations` is currently unavailable. Showing open issues from
-                `/api/issues` instead.
-              </p>
-              <ul className="mt-3 space-y-2 text-sm">
-                {fallbackIssues.map((issue) => (
-                  <li
-                    key={issue.issue_id}
-                    className="rounded-xl border border-white/10 bg-black/30 px-4 py-3"
-                  >
-                    #{issue.issue_id} {issue.title}
-                  </li>
-                ))}
-              </ul>
-            </div>
+          {!isLoading && projects.length > 0 && (
+            <p className="mt-4 text-xs text-zinc-500">
+              Showing {projects.length} result(s){query ? ` for "${query}"` : ""}.
+            </p>
           )}
         </section>
       </main>

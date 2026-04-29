@@ -31,11 +31,11 @@ log = logging.getLogger(__name__)
 # __file__  = DBMS_database\DB\ingest.py
 # BASE_DIR  = DBMS_database\DB
 # ROOT_DIR  = DBMS_database
-# KAGGLE_DIR= DBMS_database\repos_folder
+# KAGGLE_DIR= DBMS_database\DB\repos_folder  (preferred)
 # ──────────────────────────────────────────────────────────────
-BASE_DIR   = os.path.dirname(os.path.abspath(__file__))   # …\DB
-ROOT_DIR   = os.path.dirname(BASE_DIR)                    # …\DBMS_database
-KAGGLE_DIR = os.path.join(ROOT_DIR, "repos_folder")       # …\repos_folder
+BASE_DIR   = os.path.dirname(os.path.abspath(__file__))   # ...\DB
+ROOT_DIR   = os.path.dirname(BASE_DIR)                    # ...\DBMS_database
+KAGGLE_DIR = os.path.join(BASE_DIR, "repos_folder")       # ...\DB\repos_folder
 
 # ──────────────────────────────────────────────────────────────
 # CONFIG  — override via .env file placed next to this script
@@ -52,6 +52,10 @@ GITHUB_TOKEN    = os.getenv("GITHUB_TOKEN", "")
 BATCH_SIZE      = int(os.getenv("BATCH_SIZE", "500"))
 API_PER_PAGE    = 100
 FUZZY_THRESHOLD = 0.4   # pg_trgm similarity() minimum for fuzzy match
+
+# Large Kaggle repos.json (> few hundred MB): load with streaming (ijson), not pandas read_json().
+STREAM_JSON_MIN_BYTES = int(os.getenv("KAGGLE_STREAM_MIN_MB", "128")) * 1024 * 1024
+STREAM_JSON_BATCH_ROWS = int(os.getenv("KAGGLE_STREAM_BATCH_ROWS", "3000"))
 
 
 # ══════════════════════════════════════════════════════════════
@@ -172,46 +176,112 @@ def _detect_kaggle_file(directory: str) -> str:
     For this project the file should be:
       DBMS_database\repos_folder\repos.json
     """
-    # Explicit filename check first (your specific file)
-    explicit = os.path.join(directory, "repos.json")
-    if os.path.exists(explicit):
-        log.info("Found Kaggle file: %s", explicit)
-        return explicit
+    candidate_dirs = [
+        directory,                              # caller-provided path
+        os.path.join(BASE_DIR, "repos_folder"), # DBMS_database\DB\repos_folder
+        os.path.join(ROOT_DIR, "repos_folder"), # DBMS_database\repos_folder (legacy)
+    ]
 
-    patterns = ["*.json.gz", "*.jsonl.gz", "*.json", "*.csv.gz", "*.csv"]
-    for pattern in patterns:
-        found = glob.glob(os.path.join(directory, pattern))
-        if found:
-            log.info("Auto-detected Kaggle file: %s", found[0])
-            return found[0]
+    checked_paths: list[str] = []
+    patterns = ["repos.json", "*.json.gz", "*.jsonl.gz", "*.json", "*.csv.gz", "*.csv"]
+
+    for candidate_dir in candidate_dirs:
+        if not os.path.isdir(candidate_dir):
+            continue
+        for pattern in patterns:
+            found = glob.glob(os.path.join(candidate_dir, pattern))
+            if found:
+                log.info("Auto-detected Kaggle file: %s", found[0])
+                return found[0]
+            checked_paths.append(os.path.join(candidate_dir, pattern))
 
     raise FileNotFoundError(
-        f"No dataset file found in '{directory}'.\n"
-        f"Expected: {explicit}\n"
-        "Place your Kaggle download there (rename to repos.json if needed)."
+        "No dataset file found in expected locations.\n"
+        + "\n".join(f"- {path}" for path in checked_paths)
+        + "\nPlace your Kaggle file as repos.json in DBMS_database/DB/repos_folder."
     )
 
 
-def load_kaggle_dataset(directory: str) -> pd.DataFrame:
-    """
-    Load Kaggle dataset from directory, auto-detecting file type.
+def _peek_json_root_byte(path: str) -> Optional[bytes]:
+    """First non-whitespace byte of the file after optional UTF-8 BOM."""
+    with open(path, "rb") as f:
+        chunk = f.read(65536).lstrip()
+    if chunk.startswith(b"\xef\xbb\xbf"):
+        chunk = chunk[3:].lstrip()
+    if not chunk:
+        return None
+    return chunk[:1]
 
-    The pelmers dataset (repos.json) is a JSON array — NOT JSON-lines.
-    pd.read_json without lines=True handles a JSON array correctly.
-    If it IS lines format (one object per line), set lines=True below.
+
+def _should_stream_json_array(path: str) -> bool:
+    """True for large repos.json formatted as [...] — pandas would MemoryError."""
+    try:
+        file_size = os.path.getsize(path)
+    except OSError:
+        return False
+    if file_size < STREAM_JSON_MIN_BYTES:
+        return False
+    low = path.lower()
+    if not low.endswith(".json") or low.endswith(".jsonl"):
+        return False
+    byte0 = _peek_json_root_byte(path)
+    return byte0 == b"["
+
+
+def _iter_ijson_root_array(path: str):
+    """Stream objects from JSON array root using ijson."""
+    try:
+        import ijson  # pylint: disable=import-outside-toplevel
+    except ImportError as error:
+        raise ImportError(
+            "Large repos.json (-- JSON array --) requires the 'ijson' package "
+            "(streaming JSON parsing). Install: pip install ijson"
+        ) from error
+    with open(path, "rb") as fp:
+        yield from ijson.items(fp, "item")
+
+
+def _ingest_large_json_array(path: str, conn) -> int:
     """
-    path = _detect_kaggle_file(directory)
+    Incremental load of a [...] repos.json too large for pandas.read_json.
+    Rows are buffered to DataFrames before clean + upsert (same semantics as bulk load).
+    """
+    rows_total = 0
+    batch_size = STREAM_JSON_BATCH_ROWS
+    pending: list[dict] = []
+    batches = tqdm(desc="Streaming Kaggle batches", unit="batch")
+    try:
+        for obj in _iter_ijson_root_array(path):
+            if isinstance(obj, dict):
+                pending.append(obj)
+            if len(pending) >= batch_size:
+                df = pd.DataFrame(pending)
+                df = clean_kaggle_dataset(df)
+                insert_kaggle_repos(df, conn)
+                rows_total += len(pending)
+                batches.update(1)
+                pending = []
+        if pending:
+            df = pd.DataFrame(pending)
+            df = clean_kaggle_dataset(df)
+            insert_kaggle_repos(df, conn)
+            rows_total += len(pending)
+            batches.update(1)
+        return rows_total
+    finally:
+        batches.close()
+
+
+def load_kaggle_dataset_from_path(path: str) -> pd.DataFrame:
+    """Load dataset into RAM (only for CSV / small-medium JSON files)."""
     log.info("Loading: %s", path)
 
     if path.endswith((".json.gz", ".jsonl.gz")):
-        # Compressed JSON-lines
         df = pd.read_json(path, lines=True, compression="infer")
     elif path.endswith(".json"):
-        # Try JSON array first; fall back to JSON-lines on error
         try:
-            df = pd.read_json(path)           # JSON array  [{ ... }, ...]
+            df = pd.read_json(path)  # JSON array  [{ ... }, ...]
             if df.ndim == 1:
-                # read_json returned a Series — it's actually JSON-lines
                 df = pd.read_json(path, lines=True)
         except ValueError:
             df = pd.read_json(path, lines=True)
@@ -220,6 +290,17 @@ def load_kaggle_dataset(directory: str) -> pd.DataFrame:
 
     log.info("Raw rows: %d  |  Columns: %s", len(df), list(df.columns))
     return df
+
+
+def load_kaggle_dataset(directory: str) -> pd.DataFrame:
+    """
+    Load Kaggle dataset from directory into a single DataFrame.
+
+    Prefer `run_kaggle_pipeline()` for ingestion: it streams very large repos.json [...]
+    (default: >128MB) instead of pandas.read_json, which avoids MemoryError.
+    """
+    path = _detect_kaggle_file(directory)
+    return load_kaggle_dataset_from_path(path)
 
 
 def _extract_str(val) -> Optional[str]:
@@ -692,14 +773,26 @@ def run_kaggle_pipeline(kaggle_dir: str = KAGGLE_DIR) -> None:
       1. Detect + load dataset file from kaggle_dir
       2. Clean and normalise
       3. Upsert into repositories + repo_topics + repository_topics
-    """
-    df = load_kaggle_dataset(kaggle_dir)
-    df = clean_kaggle_dataset(df)
 
+    Large JSON-array files (typically multi-GB `repos.json` starting with '[') stream
+    with ijson batch-by-batch; small files load via pandas normally.
+    """
+    path = _detect_kaggle_file(kaggle_dir)
     conn = get_connection()
     try:
-        insert_kaggle_repos(df, conn)
-        log.info("Kaggle pipeline done. %d repos upserted.", len(df))
+        if _should_stream_json_array(path):
+            log.info(
+                "Streaming large JSON array (>=%d MB): %s",
+                STREAM_JSON_MIN_BYTES // (1024 * 1024),
+                path,
+            )
+            rows_processed = _ingest_large_json_array(path, conn)
+            log.info("Kaggle streaming pipeline complete. Rows processed (~): %s", rows_processed)
+        else:
+            df = load_kaggle_dataset_from_path(path)
+            df = clean_kaggle_dataset(df)
+            insert_kaggle_repos(df, conn)
+            log.info("Kaggle pipeline done. %d repos upserted.", len(df))
     finally:
         conn.close()
 
@@ -760,7 +853,7 @@ def run_full_pipeline(
 if __name__ == "__main__":
     import sys
 
-    """
+    r"""
     Usage examples (run from DBMS_database\DB\):
 
       # Load Kaggle data only (reads DBMS_database\repos_folder\repos.json)
