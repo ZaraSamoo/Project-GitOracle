@@ -16,3 +16,9 @@ venv/
 .vscode/
 .idea/
 .DS_Store
+
+# Data Files
+repos.json
+repos_folder/
+**/repos_folder/
+*.json
