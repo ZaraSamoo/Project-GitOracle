@@ -14,6 +14,7 @@ import requests
 from dotenv import load_dotenv
 from tqdm import tqdm
 
+print("🔥 THIS FILE IS RUNNING 🔥")
 # ──────────────────────────────────────────────────────────────
 # BOOTSTRAP
 # ──────────────────────────────────────────────────────────────
@@ -43,9 +44,9 @@ KAGGLE_DIR = os.path.join(BASE_DIR, "repos_folder")       # ...\DB\repos_folder
 DB_CONFIG = {
     "host":     os.getenv("PG_HOST",     "localhost"),
     "port":     int(os.getenv("PG_PORT", "5432")),
-    "dbname":   os.getenv("PG_DB",       "github_recommender"),
-    "user":     os.getenv("PG_USER",     "app_user"),
-    "password": os.getenv("PG_PASSWORD", "password"),
+    "dbname":   os.getenv("PG_DB",       "Git_Oracle"),
+    "user":     os.getenv("PG_USER",     "postgres"),
+    "password": os.getenv("PG_PASSWORD", "zed14axe"),
 }
 
 GITHUB_TOKEN    = os.getenv("GITHUB_TOKEN", "")
@@ -63,6 +64,8 @@ STREAM_JSON_BATCH_ROWS = int(os.getenv("KAGGLE_STREAM_BATCH_ROWS", "3000"))
 # ══════════════════════════════════════════════════════════════
 
 def get_connection() -> psycopg2.extensions.connection:
+    print("USER:", repr(DB_CONFIG["user"]))
+    print("PASSWORD:", repr(DB_CONFIG["password"]))
     return psycopg2.connect(**DB_CONFIG)
 
 
