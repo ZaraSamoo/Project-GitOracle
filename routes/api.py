@@ -202,38 +202,61 @@ def get_recommendations():
     )
 
 
-@api_bp.route("/search", methods=["GET"])
+@api_bp.route("/search", methods=["GET", "POST"])
 def search_repositories():
     from models import Repository
 
-    query = request.args.get("q", "").strip()
-    language = request.args.get("language", "").strip()
-    topic = request.args.get("topic", "").strip()
-    min_stars = request.args.get("min_stars", type=int)
+    payload = request.get_json(silent=True) if request.method == "POST" else None
+
+    def _get_field(name, default=""):
+        if payload and name in payload and payload.get(name) is not None:
+            return str(payload.get(name)).strip()
+        return request.args.get(name, default).strip()
+
+    query = _get_field("keyword")
+    if not query:
+        query = _get_field("query")
+    if not query:
+        query = _get_field("q")
+
+    language = _get_field("language")
+    topic = _get_field("topic")
+
+    stars_raw = None
+    if payload and payload.get("stars") is not None:
+        stars_raw = payload.get("stars")
+    elif payload and payload.get("stars_gte") is not None:
+        stars_raw = payload.get("stars_gte")
+    elif request.args.get("stars_gte") is not None:
+        stars_raw = request.args.get("stars_gte")
+    elif request.args.get("min_stars") is not None:
+        stars_raw = request.args.get("min_stars")
+
+    stars_gte = None
+    if stars_raw is not None and str(stars_raw).strip() != "":
+        try:
+            stars_gte = int(str(stars_raw).replace("+", "").strip())
+        except ValueError:
+            stars_gte = None
+
+    sort = _get_field("sort", "stars").lower() or "stars"
+    limit_raw = payload.get("limit") if payload and payload.get("limit") is not None else request.args.get("limit")
+    try:
+        limit = int(limit_raw) if limit_raw is not None else 20
+    except ValueError:
+        limit = 20
+    limit = max(1, min(limit, 50))
 
     q = Repository.query
 
-    # TEXT SEARCH
-    if query:
-        pattern = f"%{query}%"
-        q = q.filter(
-            or_(
-                Repository.full_name.ilike(pattern),
-                Repository.description.ilike(pattern),
-            )
-        )
-
-    # LANGUAGE FILTER
+    # STRUCTURED FILTERS FIRST (index-friendly)
     if language:
         q = q.filter(Repository.language.ilike(language))
 
-    # STARS FILTER
-    if min_stars is not None:
-        q = q.filter(Repository.stars >= min_stars)
+    if stars_gte is not None:
+        q = q.filter(Repository.stars >= stars_gte)
 
-    from models import RepositoryTopic, RepoTopic
-
-    # REAL TOPIC FILTER USING JOIN
+    # TOPIC FILTER
     if topic:
         from models import RepositoryTopic, RepoTopic
 
@@ -247,12 +270,28 @@ def search_repositories():
             RepoTopic.name.ilike(f"%{topic}%")
         )
 
-    repositories = q.order_by(Repository.stars.desc()).limit(20).all()
+    # KEYWORD FILTER
+    if query:
+        pattern = f"%{query}%"
+        q = q.filter(
+            or_(
+                Repository.full_name.ilike(pattern),
+                Repository.description.ilike(pattern),
+            )
+        )
+
+    if sort == "stars":
+        q = q.order_by(Repository.stars.desc())
+    else:
+        q = q.order_by(Repository.stars.desc())
+
+    repositories = q.limit(limit).all()
 
     topics_map = _topics_by_repo_id([r.repo_id for r in repositories])
 
     return jsonify({
         "count": len(repositories),
+        "mode": "keyword" if query else "filtered",
         "results": [
             _serialize_repository(repo, topics_map)
             for repo in repositories
