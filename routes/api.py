@@ -1,5 +1,4 @@
 from flask import Blueprint, jsonify, request
-from sqlalchemy import or_
 from sqlalchemy.exc import SQLAlchemyError
 
 from extensions import db
@@ -37,7 +36,7 @@ def _topics_by_repo_id(repo_ids):
     return topics_map
 
 
-def _serialize_repository(repo, topics_map):
+def _serialize_repository(repo, topics_map, difficulty_score=None):
     return {
         "repo_id": repo.repo_id,
         "github_id": repo.github_id,
@@ -51,8 +50,57 @@ def _serialize_repository(repo, topics_map):
         "topics": topics_map.get(repo.repo_id, []),
         "html_url": resolve_html_url(repo),
         "github_url": resolve_html_url(repo),
+        "difficulty_score": difficulty_score,
         "created_at": repo.created_at.isoformat() if repo.created_at else None,
     }
+
+
+def get_difficulty_limit(time_available):
+    if time_available == "1-3":
+        return 2
+    if time_available == "5-10":
+        return 4
+    return 6
+
+
+def _time_star_bounds(time_available):
+    if time_available == "1-3":
+        return {"max_stars": 2000, "min_stars": None}
+    if time_available == "5-10":
+        return {"max_stars": 10000, "min_stars": None}
+    if time_available == "20+":
+        return {"max_stars": None, "min_stars": 10000}
+    return {"max_stars": None, "min_stars": None}
+
+
+def _topic_modifier(topic_names):
+    if not topic_names:
+        return 2
+    modifiers = []
+    for name in topic_names:
+        lowered = (name or "").lower()
+        if "good first issue" in lowered:
+            modifiers.append(-2)
+        elif "documentation" in lowered:
+            modifiers.append(-1)
+        elif "bug" in lowered:
+            modifiers.append(1)
+        elif "refactor" in lowered:
+            modifiers.append(3)
+        else:
+            modifiers.append(2)
+    return min(modifiers) if modifiers else 2
+
+
+def _compute_difficulty_score(repo, topic_names):
+    stars = repo.stars or 0
+    if stars < 1000:
+        stars_score = 1
+    elif stars < 10000:
+        stars_score = 2
+    else:
+        stars_score = 3
+    return stars_score + _topic_modifier(topic_names)
 
 
 @api_bp.route("/users", methods=["GET"])
@@ -204,7 +252,7 @@ def get_recommendations():
 
 @api_bp.route("/search", methods=["GET", "POST"])
 def search_repositories():
-    from models import Repository
+    from models import RepoTopic, Repository, RepositoryTopic
 
     payload = request.get_json(silent=True) if request.method == "POST" else None
 
@@ -221,6 +269,7 @@ def search_repositories():
 
     language = _get_field("language")
     topic = _get_field("topic")
+    time_available = _get_field("timeAvailable")
 
     stars_raw = None
     if payload and payload.get("stars") is not None:
@@ -247,53 +296,88 @@ def search_repositories():
         limit = 20
     limit = max(1, min(limit, 50))
 
+    candidate_limit = 800
     q = Repository.query
 
     # STRUCTURED FILTERS FIRST (index-friendly)
     if language:
         q = q.filter(Repository.language.ilike(language))
 
-    if stars_gte is not None:
-        q = q.filter(Repository.stars >= stars_gte)
-
-    # TOPIC FILTER
-    if topic:
-        from models import RepositoryTopic, RepoTopic
-
-        q = q.join(
-            RepositoryTopic,
-            Repository.repo_id == RepositoryTopic.repo_id
-        ).join(
-            RepoTopic,
-            RepoTopic.topic_id == RepositoryTopic.topic_id
-        ).filter(
-            RepoTopic.name.ilike(f"%{topic}%")
-        )
-
-    # KEYWORD FILTER
-    if query:
-        pattern = f"%{query}%"
-        q = q.filter(
-            or_(
-                Repository.full_name.ilike(pattern),
-                Repository.description.ilike(pattern),
-            )
-        )
+    effective_min_stars = stars_gte if stars_gte is not None else 0
+    time_bounds = _time_star_bounds(time_available)
+    if time_bounds["min_stars"] is not None:
+        effective_min_stars = max(effective_min_stars, time_bounds["min_stars"])
+    q = q.filter(Repository.stars >= effective_min_stars)
+    if time_bounds["max_stars"] is not None:
+        q = q.filter(Repository.stars <= time_bounds["max_stars"])
 
     if sort == "stars":
         q = q.order_by(Repository.stars.desc())
     else:
         q = q.order_by(Repository.stars.desc())
 
-    repositories = q.limit(limit).all()
+    candidates = q.limit(candidate_limit).all()
+    if not candidates:
+        return jsonify({
+            "count": 0,
+            "time_available": time_available or None,
+            "mode": "keyword" if query else "filtered",
+            "results": [],
+        })
 
-    topics_map = _topics_by_repo_id([r.repo_id for r in repositories])
+    candidate_ids = [repo.repo_id for repo in candidates]
+
+    # TOPIC MATCH ONLY WITHIN CANDIDATE WINDOW
+    if topic:
+        topic_rows = (
+            db.session.query(RepositoryTopic.repo_id)
+            .join(RepoTopic, RepoTopic.topic_id == RepositoryTopic.topic_id)
+            .filter(
+                RepositoryTopic.repo_id.in_(candidate_ids),
+                RepoTopic.name.ilike(f"%{topic}%"),
+            )
+            .all()
+        )
+        matched_ids = {row[0] for row in topic_rows}
+        candidates = [repo for repo in candidates if repo.repo_id in matched_ids]
+        candidate_ids = [repo.repo_id for repo in candidates]
+
+    # KEYWORD MATCH ON SMALL IN-MEMORY SET
+    if query and candidates:
+        lowered_query = query.lower()
+        candidates = [
+            repo
+            for repo in candidates
+            if lowered_query in (repo.full_name or "").lower()
+            or lowered_query in (repo.description or "").lower()
+        ]
+        candidate_ids = [repo.repo_id for repo in candidates]
+
+    topics_map = _topics_by_repo_id(candidate_ids)
+
+    scored = []
+    for repo in candidates:
+        score = _compute_difficulty_score(repo, topics_map.get(repo.repo_id, []))
+        scored.append((repo, score))
+
+    if time_available:
+        difficulty_limit = get_difficulty_limit(time_available)
+        scored = [(repo, score) for repo, score in scored if score <= difficulty_limit]
+
+    scored.sort(key=lambda item: (item[1], -(item[0].stars or 0)))
+    rows = scored[:limit]
+    repositories = [repo for repo, _ in rows]
 
     return jsonify({
         "count": len(repositories),
+        "time_available": time_available or None,
         "mode": "keyword" if query else "filtered",
         "results": [
-            _serialize_repository(repo, topics_map)
-            for repo in repositories
+            _serialize_repository(
+                repo,
+                topics_map,
+                difficulty_score=float(score) if score is not None else None,
+            )
+            for repo, score in rows
         ]
     })

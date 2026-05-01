@@ -11,6 +11,7 @@ interface RepositoryResult {
   stars: number;
   language: string | null;
   html_url: string | null;
+  difficulty_score: number | null;
 }
 
 interface SearchResponse {
@@ -27,6 +28,7 @@ interface SearchFilters {
   topic: string;
   stars: number;
   keyword: string;
+  timeAvailable: "1-3" | "5-10" | "20+";
   limit: number;
 }
 
@@ -44,6 +46,7 @@ export default function FindProjectsPage() {
   const [language, setLanguage] = useState("");
   const [starsGte, setStarsGte] = useState<StarsOption>("0");
   const [topic, setTopic] = useState("");
+  const [timeAvailable, setTimeAvailable] = useState<"1-3" | "5-10" | "20+">("5-10");
   const [mode, setMode] = useState<SearchMode>("filtered");
   const [didSearch, setDidSearch] = useState(false);
   const isFirstLoadRef = useRef(true);
@@ -59,9 +62,10 @@ export default function FindProjectsPage() {
       topic,
       stars: Number.parseInt(starsGte, 10) || 0,
       keyword: debouncedKeyword.trim(),
+      timeAvailable,
       limit: 20,
     }),
-    [language, topic, starsGte, debouncedKeyword]
+    [language, topic, starsGte, debouncedKeyword, timeAvailable]
   );
 
   const weakKeywordReason = useMemo(() => {
@@ -73,12 +77,19 @@ export default function FindProjectsPage() {
   }, [filters.keyword]);
 
   const fetchSuggestions = async (activeFilters: SearchFilters) => {
-    const loweredStars = Math.max(100, Math.floor(activeFilters.stars / 5));
+    const loweredStars = Math.max(100, Math.floor(activeFilters.stars / 2));
+    const easierTime: SearchFilters["timeAvailable"] =
+      activeFilters.timeAvailable === "20+"
+        ? "5-10"
+        : activeFilters.timeAvailable === "5-10"
+        ? "1-3"
+        : "1-3";
     const relaxed: SearchFilters = {
       language: activeFilters.language,
       topic: "",
       stars: activeFilters.stars > 0 ? loweredStars : 100,
       keyword: "",
+      timeAvailable: easierTime,
       limit: 10,
     };
 
@@ -92,8 +103,8 @@ export default function FindProjectsPage() {
       setSuggestions(data.results);
       setSuggestionLabel(
         relaxed.language
-          ? `Try these ${relaxed.language} repositories with lower star threshold (${relaxed.stars}+).`
-          : `Try these repositories with a broader star threshold (${relaxed.stars}+).`
+          ? `No repositories match your time preference. Try ${relaxed.timeAvailable} hours and ${relaxed.language} with ${relaxed.stars}+ stars.`
+          : `No repositories match your time preference. Try ${relaxed.timeAvailable} hours with ${relaxed.stars}+ stars.`
       );
     } catch {
       setSuggestions([]);
@@ -169,6 +180,9 @@ export default function FindProjectsPage() {
     if (filters.topic && filters.stars >= 5000) {
       return "Your topic + high star threshold may be too restrictive. Try 1000+ stars.";
     }
+    if (filters.timeAvailable === "1-3") {
+      return "1-3 hours selects beginner-friendly repositories only. Try 5-10 hours for broader matches.";
+    }
     if (filters.language && filters.topic) {
       return "Language + topic combination may be narrow. Try removing topic or changing keyword.";
     }
@@ -201,6 +215,11 @@ export default function FindProjectsPage() {
       <div className="mt-1 text-sm text-slate-400">
         {project.language || "Unknown"} - ⭐ {project.stars?.toLocaleString?.() ?? 0}
       </div>
+      {project.difficulty_score !== null && (
+        <div className="mt-1 text-xs text-violet-200">
+          Difficulty score: {project.difficulty_score.toFixed(1)}
+        </div>
+      )}
       <p className="mt-2 text-slate-300">
         {(project.description || "No description available.").slice(0, 150)}
         {(project.description || "").length > 150 ? "..." : ""}
@@ -219,7 +238,7 @@ export default function FindProjectsPage() {
         </p>
 
         <section className="mt-8 rounded-3xl border border-white/10 bg-gradient-to-br from-zinc-950 via-violet-950/20 to-cyan-950/20 p-5 md:p-8">
-          <form onSubmit={onSubmit} className="grid gap-3 md:grid-cols-4">
+          <form onSubmit={onSubmit} className="grid gap-3 md:grid-cols-5">
             <label className="text-sm">
               <span className="mb-1 block text-zinc-300">Language</span>
               <select
@@ -285,6 +304,19 @@ export default function FindProjectsPage() {
             </label>
 
             <label className="text-sm md:col-span-1">
+              <span className="mb-1 block text-zinc-300">Time Available</span>
+              <select
+                value={timeAvailable}
+                onChange={(e) => setTimeAvailable(e.target.value as "1-3" | "5-10" | "20+")}
+                className="w-full rounded-xl border border-white/15 bg-black/50 px-3 py-2 text-white"
+              >
+                <option value="1-3">1-3 hours</option>
+                <option value="5-10">5-10 hours</option>
+                <option value="20+">20+ hours</option>
+              </select>
+            </label>
+
+            <label className="text-sm md:col-span-1">
               <span className="mb-1 block text-zinc-300">Keyword</span>
               <input
                 value={keyword}
@@ -308,6 +340,7 @@ export default function FindProjectsPage() {
                   setLanguage("");
                   setStarsGte("0");
                   setTopic("");
+                  setTimeAvailable("5-10");
                 }}
                 className="ml-2 rounded-xl border border-white/20 px-4 py-2 text-sm text-zinc-300 hover:bg-white/10"
               >
@@ -325,6 +358,9 @@ export default function FindProjectsPage() {
           <p className="mt-2 text-xs text-zinc-500">
             Search mode: {mode === "keyword" ? "Keyword + structured filters" : "Structured filters"}
           </p>
+          <p className="mt-1 text-xs text-zinc-500">
+            Time preference: {filters.timeAvailable} hours
+          </p>
           {isLoading && (
             <div className="mt-4 space-y-3">
               {Array.from({ length: 3 }).map((_, idx) => (
@@ -339,7 +375,7 @@ export default function FindProjectsPage() {
           {error && <p className="mt-4 text-sm text-rose-300">{error}</p>}
           {!error && !isLoading && projects.length === 0 && didSearch && (
             <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
-              <p className="text-sm text-amber-200">No repositories matched your current filters.</p>
+              <p className="text-sm text-amber-200">No repositories match your time preference.</p>
               {emptyStateHint && <p className="mt-1 text-xs text-amber-100/90">{emptyStateHint}</p>}
             </div>
           )}
