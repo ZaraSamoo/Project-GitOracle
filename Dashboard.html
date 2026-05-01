@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GitMatch Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: { 400: '#818cf8', 500: '#6366f1', 600: '#4f46e5' },
+                        dark: { 800: '#1e1e24', 900: '#131316', 950: '#0a0a0c' }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-dark-950 text-gray-200 font-sans h-screen flex overflow-hidden">
+
+    <!-- SIDEBAR -->
+    <aside class="w-64 bg-dark-900 border-r border-gray-800 flex flex-col hidden md:flex">
+        <div class="h-16 flex items-center px-6 border-b border-gray-800">
+            <i class="fa-brands fa-github text-2xl text-brand-500 mr-2"></i>
+            <span class="text-xl font-bold tracking-tight text-white">GitMatch</span>
+        </div>
+        
+        <nav class="flex-1 overflow-y-auto py-4">
+            <ul class="space-y-1 px-3">
+                <li><a href="#" class="flex items-center px-3 py-2.5 bg-brand-500/10 text-brand-400 rounded-lg"><i class="fa-solid fa-house w-6"></i> Dashboard</a></li>
+                <li><a href="#" class="flex items-center px-3 py-2.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"><i class="fa-solid fa-compass w-6"></i> Explore Issues</a></li>
+                <li><a href="#" class="flex items-center px-3 py-2.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"><i class="fa-solid fa-bookmark w-6"></i> Saved Projects</a></li>
+                <li><a href="#" class="flex items-center px-3 py-2.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"><i class="fa-solid fa-chart-line w-6"></i> My Stats</a></li>
+            </ul>
+        </nav>
+
+        <!-- User Profile Snippet (From user_profiles table) -->
+        <div class="p-4 border-t border-gray-800">
+            <div class="flex items-center gap-3">
+                <img src="https://avatars.githubusercontent.com/u/9919?s=200&v=4" alt="Avatar" class="w-10 h-10 rounded-full border-2 border-brand-500">
+                <div>
+                    <p class="text-sm font-medium text-white">Alex Dev</p>
+                    <p class="text-xs text-gray-500">@alex_codes</p>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="flex-1 flex flex-col h-full relative overflow-hidden">
+        
+        <!-- HEADER -->
+        <header class="h-16 bg-dark-900/50 backdrop-blur-sm border-b border-gray-800 flex items-center justify-between px-6 sticky top-0 z-10">
+            <!-- Mobile Menu Button -->
+            <button class="md:hidden text-gray-400 hover:text-white"><i class="fa-solid fa-bars text-xl"></i></button>
+            
+            <div class="hidden md:block">
+                <h2 class="text-lg font-semibold text-white">Welcome back, Alex! 👋</h2>
+            </div>
+
+            <div class="flex items-center gap-4">
+                <!-- Availability Selector (From user_availability table) -->
+                <div class="flex items-center gap-2 bg-dark-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm">
+                    <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                    <span class="text-gray-300">Available:</span>
+                    <select class="bg-transparent text-white font-medium outline-none cursor-pointer">
+                        <option>30 mins</option>
+                        <option selected>60 mins</option>
+                        <option>120+ mins</option>
+                    </select>
+                </div>
+                
+                <button class="w-9 h-9 rounded-full bg-dark-800 border border-gray-700 flex items-center justify-center text-gray-400 hover:text-white transition-colors relative">
+                    <i class="fa-solid fa-bell"></i>
+                    <span class="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 border-2 border-dark-950 rounded-full"></span>
+                </button>
+            </div>
+        </header>
+
+        <!-- DASHBOARD SCROLLABLE AREA -->
+        <div class="flex-1 overflow-y-auto p-4 md:p-8">
+            
+            <!-- STATS GRID -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <!-- Points (From user_profiles.total_points) -->
+                <div class="bg-dark-900 border border-gray-800 rounded-xl p-5 flex items-center shadow-lg">
+                    <div class="w-12 h-12 rounded-lg bg-yellow-500/10 text-yellow-500 flex items-center justify-center text-xl mr-4">
+                        <i class="fa-solid fa-trophy"></i>
+                    </div>
+                    <div>
+                        <p class="text-gray-400 text-sm">Total Points</p>
+                        <p class="text-2xl font-bold text-white">2,450</p>
+                    </div>
+                </div>
+                
+                <!-- Experience (From users.experience_level) -->
+                <div class="bg-dark-900 border border-gray-800 rounded-xl p-5 flex items-center shadow-lg">
+                    <div class="w-12 h-12 rounded-lg bg-brand-500/10 text-brand-500 flex items-center justify-center text-xl mr-4">
+                        <i class="fa-solid fa-meteor"></i>
+                    </div>
+                    <div>
+                        <p class="text-gray-400 text-sm">Experience Level</p>
+                        <p class="text-2xl font-bold text-white">Intermediate</p>
+                    </div>
+                </div>
+
+                <!-- Completed (From assignments.status) -->
+                <div class="bg-dark-900 border border-gray-800 rounded-xl p-5 flex items-center shadow-lg">
+                    <div class="w-12 h-12 rounded-lg bg-green-500/10 text-green-500 flex items-center justify-center text-xl mr-4">
+                        <i class="fa-solid fa-check-double"></i>
+                    </div>
+                    <div>
+                        <p class="text-gray-400 text-sm">Bounties Completed</p>
+                        <p class="text-2xl font-bold text-white">12</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                
+                <!-- LEFT COLUMN: RECOMMENDATIONS (Spans 2 columns) -->
+                <div class="lg:col-span-2 space-y-6">
+                    <div class="flex justify-between items-end">
+                        <div>
+                            <h3 class="text-xl font-bold text-white mb-1">Recommended Issues</h3>
+                            <p class="text-sm text-gray-400">Curated based on your skills and 60-min availability.</p>
+                        </div>
+                        <button class="text-sm text-brand-400 hover:text-brand-300">View All</button>
+                    </div>
+
+                    <!-- Recommendation Card 1 (From recommendations JOIN issues) -->
+                    <div class="bg-dark-900 border border-gray-800 rounded-xl p-6 hover:border-brand-500/50 transition-colors group">
+                        <div class="flex justify-between items-start mb-4">
+                            <div class="flex items-center gap-3">
+                                <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" class="w-8 h-8 rounded bg-white p-0.5">
+                                <div>
+                                    <p class="text-sm text-gray-400">facebook / react</p>
+                                    <h4 class="text-lg font-semibold text-white group-hover:text-brand-400 transition-colors">Fix memory leak in useEffect cleanup</h4>
+                                </div>
+                            </div>
+                            <!-- Match Score -->
+                            <div class="bg-green-500/10 border border-green-500/20 text-green-400 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
+                                <i class="fa-solid fa-bolt"></i> 98% Match
+                            </div>
+                        </div>
+                        
+                        <p class="text-gray-400 text-sm mb-4 line-clamp-2">
+                            There is a reported edge case where rapid unmounting of components using custom hooks causes a memory leak. Needs a minor adjustment to the teardown logic.
+                        </p>
+                        
+                        <div class="flex flex-wrap items-center justify-between gap-4">
+                            <div class="flex gap-2">
+                                <!-- Issue Labels (From issue_labels) -->
+                                <span class="px-2.5 py-1 rounded bg-dark-800 border border-gray-700 text-xs text-gray-300">bug</span>
+                                <span class="px-2.5 py-1 rounded bg-blue-500/10 border border-blue-500/20 text-xs text-blue-400">javascript</span>
+                                <span class="px-2.5 py-1 rounded bg-dark-800 border border-gray-700 text-xs text-gray-300"><i class="fa-regular fa-clock"></i> Est. 45m</span>
+                            </div>
+                            <button class="bg-brand-600 hover:bg-brand-500 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors">
+                                Claim Bounty
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Recommendation Card 2 -->
+                    <div class="bg-dark-900 border border-gray-800 rounded-xl p-6 hover:border-brand-500/50 transition-colors group">
+                        <div class="flex justify-between items-start mb-4">
+                            <div class="flex items-center gap-3">
+                                <div class="w-8 h-8 rounded bg-gradient-to-br from-teal-400 to-blue-500 flex items-center justify-center text-white font-bold text-xs">TW</div>
+                                <div>
+                                    <p class="text-sm text-gray-400">tailwindlabs / tailwindcss</p>
+                                    <h4 class="text-lg font-semibold text-white group-hover:text-brand-400 transition-colors">Add missing documentation for arbitrary variants</h4>
+                                </div>
+                            </div>
+                            <div class="bg-brand-500/10 border border-brand-500/20 text-brand-400 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
+                                <i class="fa-solid fa-bolt"></i> 85% Match
+                            </div>
+                        </div>
+                        
+                        <p class="text-gray-400 text-sm mb-4 line-clamp-2">
+                            The new arbitrary variants feature is missing a few edge case examples in the typography plugin documentation.
+                        </p>
+                        
+                        <div class="flex flex-wrap items-center justify-between gap-4">
+                            <div class="flex gap-2">
+                                <span class="px-2.5 py-1 rounded bg-purple-500/10 border border-purple-500/20 text-xs text-purple-400">documentation</span>
+                                <span class="px-2.5 py-1 rounded bg-dark-800 border border-gray-700 text-xs text-gray-300">good first issue</span>
+                                <span class="px-2.5 py-1 rounded bg-dark-800 border border-gray-700 text-xs text-gray-300"><i class="fa-regular fa-clock"></i> Est. 30m</span>
+                            </div>
+                            <button class="bg-brand-600 hover:bg-brand-500 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors">
+                                Claim Bounty
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- RIGHT COLUMN: SIDEBAR WIDGETS -->
+                <div class="space-y-6">
+                    
+                    <!-- Active Assignments (From assignments table) -->
+                    <div class="bg-dark-900 border border-gray-800 rounded-xl p-5">
+                        <h3 class="font-semibold text-white mb-4 flex items-center gap-2">
+                            <i class="fa-solid fa-spinner animate-spin-slow text-brand-500"></i> In Progress
+                        </h3>
+                        
+                        <div class="border border-gray-800 bg-dark-950 rounded-lg p-4">
+                            <h5 class="text-sm font-medium text-white mb-1">Implement OAuth2 Login</h5>
+                            <p class="text-xs text-gray-500 mb-3">supabase / supabase</p>
+                            
+                            <div class="w-full bg-gray-800 rounded-full h-1.5 mb-2">
+                                <div class="bg-brand-500 h-1.5 rounded-full" style="width: 65%"></div>
+                            </div>
+                            <div class="flex justify-between text-xs">
+                                <span class="text-gray-400">65% Complete</span>
+                                <span class="text-brand-400 cursor-pointer hover:underline">Update</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- User Skills Profile (From user_skills table) -->
+                    <div class="bg-dark-900 border border-gray-800 rounded-xl p-5">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="font-semibold text-white">Your Skill Vector</h3>
+                            <button class="text-xs text-gray-400 hover:text-white"><i class="fa-solid fa-pen"></i></button>
+                        </div>
+                        
+                        <div class="space-y-3">
+                            <!-- Skill 1 -->
+                            <div>
+                                <div class="flex justify-between text-xs mb-1">
+                                    <span class="text-gray-300">JavaScript</span>
+                                    <span class="text-brand-400">Lvl 4/5</span>
+                                </div>
+                                <div class="flex gap-1">
+                                    <div class="h-1 flex-1 bg-brand-500 rounded-sm"></div>
+                                    <div class="h-1 flex-1 bg-brand-500 rounded-sm"></div>
+                                    <div class="h-1 flex-1 bg-brand-500 rounded-sm"></div>
+                                    <div class="h-1 flex-1 bg-brand-500 rounded-sm"></div>
+                                    <div class="h-1 flex-1 bg-gray-800 rounded-sm"></div>
+                                </div>
+                            </div>
+                            <!-- Skill 2 -->
+                            <div>
+                                <div class="flex justify-between text-xs mb-1">
+                                    <span class="text-gray-300">React.js</span>
+                                    <span class="text-brand-400">Lvl 3/5</span>
+                                </div>
+                                <div class="flex gap-1">
+                                    <div class="h-1 flex-1 bg-brand-500 rounded-sm"></div>
+                                    <div class="h-1 flex-1 bg-brand-500 rounded-sm"></div>
+                                    <div class="h-1 flex-1 bg-brand-500 rounded-sm"></div>
+                                    <div class="h-1 flex-1 bg-gray-800 rounded-sm"></div>
+                                    <div class="h-1 flex-1 bg-gray-800 rounded-sm"></div>
+                                </div>
+                            </div>
+                            <!-- Skill 3 -->
+                            <div>
+                                <div class="flex justify-between text-xs mb-1">
+                                    <span class="text-gray-300">Python</span>
+                                    <span class="text-brand-400">Lvl 2/5</span>
+                                </div>
+                                <div class="flex gap-1">
+                                    <div class="h-1 flex-1 bg-brand-500 rounded-sm"></div>
+                                    <div class="h-1 flex-1 bg-brand-500 rounded-sm"></div>
+                                    <div class="h-1 flex-1 bg-gray-800 rounded-sm"></div>
+                                    <div class="h-1 flex-1 bg-gray-800 rounded-sm"></div>
+                                    <div class="h-1 flex-1 bg-gray-800 rounded-sm"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <style>
+        .animate-spin-slow {
+            animation: spin 3s linear infinite;
+        }
+        /* Custom scrollbar for dark theme */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0a0a0c; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #1e1e24; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #374151; 
+        }
+    </style>
+</body>
+</html>

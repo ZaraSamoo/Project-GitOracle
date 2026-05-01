@@ -1,8 +1,13 @@
+<<<<<<< HEAD
 # --- Frontend (Node/Next.js) ---
+=======
+# Next.js / Node
+>>>>>>> Zara
 node_modules/
 .next/
 out/
 build/
+<<<<<<< HEAD
 .vercel
 *.log
 npm-debug.log*
@@ -30,3 +35,24 @@ instance/
 Thumbs.db
 
 .vscode/
+=======
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Database/IDE
+*.sqlite3
+.vscode/
+.idea/
+.DS_Store
+
+# Data Files
+repos.json
+repos_folder/
+**/repos_folder/
+*.json
+>>>>>>> Zara
