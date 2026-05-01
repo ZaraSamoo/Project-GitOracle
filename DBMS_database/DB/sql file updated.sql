@@ -206,6 +206,7 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS trg_issue_updated ON issues;
 CREATE TRIGGER trg_issue_updated
 BEFORE UPDATE ON issues
 FOR EACH ROW EXECUTE FUNCTION trg_update_issue_timestamp();
@@ -218,6 +219,7 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS trg_profile_updated ON user_profiles;
 CREATE TRIGGER trg_profile_updated
 BEFORE UPDATE ON user_profiles
 FOR EACH ROW EXECUTE FUNCTION trg_update_profile_timestamp();
@@ -255,10 +257,9 @@ END;
 $$;
 
 -- ═══════════════════════════════════════════════════════════
--- PROCEDURES (DUAL: FLASK + DEMO)
+-- PROCEDURES
 -- ═══════════════════════════════════════════════════════════
 
--- Flask-safe
 CREATE OR REPLACE PROCEDURE claim_issue(p_user_id INT, p_issue_id INT)
 LANGUAGE plpgsql AS $$
 BEGIN
@@ -267,7 +268,6 @@ BEGIN
 END;
 $$;
 
--- Demo (with COMMIT)
 CREATE OR REPLACE PROCEDURE claim_issue_demo(p_user_id INT, p_issue_id INT)
 LANGUAGE plpgsql AS $$
 BEGIN
@@ -277,26 +277,34 @@ BEGIN
 END;
 $$;
 
-ALTER TABLE repositories
-DROP CONSTRAINT repositories_github_id_key;
+-- ═══════════════════════════════════════════════════════════
+-- INDEXES (DEDUPED)
+-- ═══════════════════════════════════════════════════════════
 
-ALTER TABLE repositories
-ADD CONSTRAINT repositories_full_name_key UNIQUE (full_name);
+CREATE INDEX IF NOT EXISTS idx_repos_full_name ON repositories(full_name);
+CREATE INDEX IF NOT EXISTS idx_repos_name ON repositories(name);
+CREATE INDEX IF NOT EXISTS idx_repos_language ON repositories(language);
+CREATE INDEX IF NOT EXISTS idx_repos_stars ON repositories(stars DESC);
 
-SELECT conname
-FROM pg_constraint
-WHERE conrelid = 'repositories'::regclass;
--- 1. Add some sample repositories
-INSERT INTO repositories (github_id, owner, name, full_name, stars, language, html_url) 
-VALUES 
-(101, 'facebook', 'react', 'facebook/react', 210000, 'JavaScript', 'https://github.com/facebook/react'),
-(102, 'pallets', 'flask', 'pallets/flask', 65000, 'Python', 'https://github.com/pallets/flask'),
-(103, 'tensorflow', 'tensorflow', 'tensorflow/tensorflow', 180000, 'C++', 'https://github.com/tensorflow/tensorflow');
+CREATE INDEX IF NOT EXISTS idx_issues_repo_id ON issues(repo_id);
+CREATE INDEX IF NOT EXISTS idx_issues_state ON issues(state);
+CREATE INDEX IF NOT EXISTS idx_issues_title_trgm ON issues USING GIN (title gin_trgm_ops);
 
--- 2. "Save" one for User 1 (Make sure User 1 exists first)
-INSERT INTO users (username, email, password_hash) 
-VALUES ('zara_noor', 'zara@giki.edu.pk', 'dummy_hash')
+-- ═══════════════════════════════════════════════════════════
+-- SEED DATA (CLEANED)
+-- ═══════════════════════════════════════════════════════════
+
+-- ═══════════════════════════════════════════════════════════
+-- DEMO DATA (FOR VIVA / FLASK TESTING ONLY)
+-- ═══════════════════════════════════════════════════════════
+
+-- create sample user
+INSERT INTO users (username, email, password_hash)
+VALUES ('test_user', 'test@giki.edu.pk', 'hash123')
 ON CONFLICT DO NOTHING;
 
-INSERT INTO saved_repositories (user_id, repo_id) 
-VALUES (1, 1);
+
+-- simulate saved repo
+INSERT INTO saved_repositories (user_id, repo_id)
+VALUES (1, 1)
+ON CONFLICT DO NOTHING;

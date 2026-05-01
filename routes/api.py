@@ -8,15 +8,47 @@ api_bp = Blueprint("api_bp", __name__)
 
 
 def resolve_html_url(repo):
-    html_url = (repo.html_url or "").strip() if repo.html_url else ""
-    if html_url.startswith("https://github.com/"):
-        return html_url
-
-    full_name = (repo.full_name or "").strip() if repo.full_name else ""
-    if "/" in full_name:
-        return f"https://github.com/{full_name}"
-
+    owner = (repo.owner or "").strip() if repo.owner else ""
+    name = (repo.name or "").strip() if repo.name else ""
+    if owner and name:
+        return f"https://github.com/{owner}/{name}"
     return None
+
+
+def _topics_by_repo_id(repo_ids):
+    if not repo_ids:
+        return {}
+    from models import RepoTopic, RepositoryTopic
+
+    rows = (
+        db.session.query(RepositoryTopic.repo_id, RepoTopic.name)
+        .join(RepoTopic, RepoTopic.topic_id == RepositoryTopic.topic_id)
+        .filter(RepositoryTopic.repo_id.in_(repo_ids))
+        .all()
+    )
+    topics_map = {repo_id: [] for repo_id in repo_ids}
+    for repo_id, topic_name in rows:
+        topics_map.setdefault(repo_id, []).append(topic_name)
+    for repo_id in topics_map:
+        topics_map[repo_id] = sorted(set(t for t in topics_map[repo_id] if t))
+    return topics_map
+
+
+def _serialize_repository(repo, topics_map):
+    return {
+        "repo_id": repo.repo_id,
+        "github_id": repo.github_id,
+        "owner": repo.owner,
+        "name": repo.name,
+        "full_name": repo.full_name,
+        "description": repo.description,
+        "stars": repo.stars,
+        "forks": repo.forks,
+        "language": repo.language,
+        "topics": topics_map.get(repo.repo_id, []),
+        "github_url": resolve_html_url(repo),
+        "created_at": repo.created_at.isoformat() if repo.created_at else None,
+    }
 
 
 @api_bp.route("/users", methods=["GET"])
@@ -46,25 +78,11 @@ def get_repositories():
     from models import Repository
 
     repositories = Repository.query.order_by(Repository.stars.desc()).limit(100).all()
+    topics_map = _topics_by_repo_id([repo.repo_id for repo in repositories])
     return jsonify(
         {
             "count": len(repositories),
-            "repositories": [
-                {
-                    "repo_id": repo.repo_id,
-                    "github_id": repo.github_id,
-                    "owner": repo.owner,
-                    "name": repo.name,
-                    "full_name": repo.full_name,
-                    "description": repo.description,
-                    "stars": repo.stars,
-                    "forks": repo.forks,
-                    "language": repo.language,
-                    "html_url": repo.html_url,
-                    "created_at": repo.created_at.isoformat() if repo.created_at else None,
-                }
-                for repo in repositories
-            ],
+            "repositories": [_serialize_repository(repo, topics_map) for repo in repositories],
         }
     )
 
@@ -112,6 +130,7 @@ def get_saved_projects():
         .order_by(SavedRepository.saved_at.desc())
         .all()
     )
+    topics_map = _topics_by_repo_id([repo.repo_id for repo, _ in saved_projects])
 
     return jsonify(
         {
@@ -119,15 +138,7 @@ def get_saved_projects():
             "saved_projects": [
                 {
                     "user_id": saved.user_id,
-                    "repo_id": repo.repo_id,
-                    "full_name": repo.full_name,
-                    "owner": repo.owner,
-                    "name": repo.name,
-                    "description": repo.description,
-                    "language": repo.language,
-                    "stars": repo.stars,
-                    "forks": repo.forks,
-                    "html_url": repo.html_url,
+                    **_serialize_repository(repo, topics_map),
                     "saved_at": saved.saved_at.isoformat() if saved.saved_at else None,
                 }
                 for repo, saved in saved_projects
@@ -193,20 +204,11 @@ def search_repositories():
         .limit(20)
         .all()
     )
+    topics_map = _topics_by_repo_id([repo.repo_id for repo in repositories])
 
     return jsonify(
         {
             "count": len(repositories),
-            "results": [
-                {
-                    "repo_id": repo.repo_id,
-                    "full_name": repo.full_name,
-                    "description": repo.description,
-                    "stars": repo.stars,
-                    "language": repo.language,
-                    "html_url": resolve_html_url(repo),
-                }
-                for repo in repositories
-            ],
+            "results": [_serialize_repository(repo, topics_map) for repo in repositories],
         }
     )
