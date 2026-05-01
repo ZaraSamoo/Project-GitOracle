@@ -5,6 +5,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { SignInPage, type Testimonial } from "@/components/ui/sign-in";
 import { flaskRequest } from "@/lib/flask-api";
+import { setSessionToken, setSessionUserId } from "@/lib/auth-session";
+
+interface UsersResponse {
+  users: Array<{
+    user_id: number;
+  }>;
+}
 
 const sampleTestimonials: Testimonial[] = [
   {
@@ -38,7 +45,11 @@ export default function SignInRoute() {
     setError(null);
 
     try {
-      await flaskRequest({ path: "/api/users" });
+      const data = await flaskRequest<UsersResponse>({ path: "/api/users" });
+      const fallbackUserId = 1;
+      const userId = data.users[0]?.user_id ?? fallbackUserId;
+      setSessionUserId(userId);
+      setSessionToken(String(userId));
       router.push("/user-profile");
     } catch (requestError) {
       setError(

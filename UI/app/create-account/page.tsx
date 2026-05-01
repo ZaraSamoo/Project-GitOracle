@@ -5,6 +5,13 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, Sparkles } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { flaskRequest } from "@/lib/flask-api";
+import { setSessionToken, setSessionUserId } from "@/lib/auth-session";
+
+interface UsersResponse {
+  users: Array<{
+    user_id: number;
+  }>;
+}
 
 export default function CreateAccountPage() {
   const router = useRouter();
@@ -29,7 +36,11 @@ export default function CreateAccountPage() {
               event.preventDefault();
               setError(null);
               try {
-                await flaskRequest({ path: "/api/users" });
+                const data = await flaskRequest<UsersResponse>({ path: "/api/users" });
+                const fallbackUserId = 1;
+                const userId = data.users[0]?.user_id ?? fallbackUserId;
+                setSessionUserId(userId);
+                setSessionToken(String(userId));
                 router.push("/user-profile");
               } catch (requestError) {
                 setError(

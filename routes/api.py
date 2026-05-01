@@ -55,6 +55,29 @@ def _serialize_repository(repo, topics_map, difficulty_score=None):
     }
 
 
+def _extract_user_id_from_request():
+    user_id = request.args.get("user_id", type=int)
+    if user_id:
+        return user_id
+
+    header_user_id = request.headers.get("X-User-Id")
+    if header_user_id:
+        try:
+            parsed = int(header_user_id)
+            if parsed > 0:
+                return parsed
+        except ValueError:
+            pass
+
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header.split(" ", 1)[1].strip()
+        if token.isdigit():
+            return int(token)
+
+    return None
+
+
 def get_difficulty_limit(time_available):
     if time_available == "1-3":
         return 2
@@ -171,39 +194,59 @@ def get_issues():
     )
 
 
+@api_bp.route("/saved-repos", methods=["GET"])
 @api_bp.route("/saved-projects", methods=["GET"])
 def get_saved_projects():
     from models import Repository, SavedRepository
 
     try:
-        # Get user_id from query params (e.g. /saved-projects?user_id=2)
-        user_id = request.args.get("user_id", type=int)
-
-        # fallback if not provided (safe default)
+        user_id = _extract_user_id_from_request()
         if user_id is None:
-            user_id = 1
+            return jsonify({
+                "count": 0,
+                "saved_projects": [],
+                "error": "Missing authenticated user context.",
+            }), 401
 
-        saved_projects = (
-            db.session.query(Repository, SavedRepository)
+        rows = (
+            db.session.query(
+                Repository.repo_id,
+                Repository.full_name,
+                Repository.description,
+                Repository.owner,
+                Repository.language,
+                Repository.stars,
+                Repository.forks,
+                Repository.html_url,
+                SavedRepository.saved_at,
+            )
             .join(SavedRepository, SavedRepository.repo_id == Repository.repo_id)
             .filter(SavedRepository.user_id == user_id)
             .order_by(SavedRepository.saved_at.desc())
+            .limit(50)
             .all()
         )
 
-        repo_ids = [repo.repo_id for repo, _ in saved_projects]
-        topics_map = _topics_by_repo_id(repo_ids)
+        saved_projects = [
+            {
+                "user_id": user_id,
+                "repo_id": row.repo_id,
+                "full_name": row.full_name,
+                "description": row.description,
+                "owner": row.owner,
+                "language": row.language,
+                "stars": row.stars,
+                "forks": row.forks,
+                "html_url": row.html_url,
+                "saved_at": row.saved_at.isoformat() if row.saved_at else None,
+            }
+            for row in rows
+        ]
 
         return jsonify({
-            "count": len(saved_projects),
-            "saved_projects": [
-                {
-                    "user_id": saved.user_id,
-                    **_serialize_repository(repo, topics_map),
-                    "saved_at": saved.saved_at.isoformat() if saved.saved_at else None,
-                }
-                for repo, saved in saved_projects
-            ],
+            "count": len(rows),
+            "saved_projects": saved_projects,
+            "saved_repositories": saved_projects,
         })
 
     except Exception as e:

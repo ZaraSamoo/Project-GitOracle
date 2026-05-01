@@ -32,6 +32,15 @@ def create_app():
         db.session.execute(
             text("CREATE INDEX IF NOT EXISTS idx_repo_topics_repo_id ON repository_topics(repo_id)")
         )
+        db.session.execute(
+            text("CREATE INDEX IF NOT EXISTS idx_saved_user ON saved_repositories(user_id)")
+        )
+        db.session.execute(
+            text("CREATE INDEX IF NOT EXISTS idx_saved_repo ON saved_repositories(repo_id)")
+        )
+        db.session.execute(
+            text("CREATE INDEX IF NOT EXISTS idx_saved_user_repo ON saved_repositories(user_id, repo_id)")
+        )
         db.session.commit()
     app.register_blueprint(api_bp, url_prefix="/api")
 

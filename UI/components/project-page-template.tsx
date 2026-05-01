@@ -15,6 +15,8 @@ interface ProjectPageTemplateProps {
     html_url: string | null;
   }>;
   repositoriesError?: string;
+  loading?: boolean;
+  emptyMessage?: string;
 }
 
 export function ProjectPageTemplate({
@@ -23,6 +25,8 @@ export function ProjectPageTemplate({
   imageUrl,
   repositories = [],
   repositoriesError,
+  loading = false,
+  emptyMessage = "No repositories available from `/api/saved-repos`.",
 }: ProjectPageTemplateProps) {
   return (
     <div className="min-h-screen bg-black text-white">
@@ -35,10 +39,12 @@ export function ProjectPageTemplate({
         </div>
         <section className="mt-8 rounded-2xl border border-white/10 bg-zinc-950/60 p-5">
           <h2 className="text-xl font-semibold">Saved Repositories from Flask</h2>
-          {repositoriesError ? (
+          {loading ? (
+            <p className="mt-3 text-sm text-zinc-300">Loading your saved repositories...</p>
+          ) : repositoriesError ? (
             <p className="mt-3 text-sm text-rose-300">{repositoriesError}</p>
           ) : repositories.length === 0 ? (
-            <p className="mt-3 text-sm text-zinc-400">No repositories available from `/api/saved-projects`.</p>
+            <p className="mt-3 text-sm text-zinc-400">{emptyMessage}</p>
           ) : (
             <ul className="mt-4 space-y-4 text-sm">
               {repositories.map((repo) => (

@@ -30,7 +30,7 @@ export async function flaskRequest<T>({
         "Content-Type": "application/json",
         ...(init.headers ?? {}),
       },
-      cache: "no-store",
+      cache: init.cache ?? "no-store",
       signal: controller.signal,
     });
   } catch (error) {
