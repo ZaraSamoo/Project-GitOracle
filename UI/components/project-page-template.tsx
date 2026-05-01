@@ -7,11 +7,12 @@ interface ProjectPageTemplateProps {
   repositories?: Array<{
     repo_id: number;
     full_name: string;
+    description: string | null;
     owner: string;
     language: string | null;
     stars: number;
     forks: number;
-    html_url: string;
+    html_url: string | null;
   }>;
   repositoriesError?: string;
 }
@@ -39,26 +40,31 @@ export function ProjectPageTemplate({
           ) : repositories.length === 0 ? (
             <p className="mt-3 text-sm text-zinc-400">No repositories available from `/api/saved-projects`.</p>
           ) : (
-            <ul className="mt-4 space-y-2 text-sm">
+            <ul className="mt-4 space-y-4 text-sm">
               {repositories.map((repo) => (
                 <li
                   key={repo.repo_id}
-                  className="flex items-center justify-between rounded-lg border border-white/10 bg-black/30 px-4 py-3"
+                  className="rounded-xl border border-slate-700 bg-slate-800 p-4 transition-all duration-200 hover:-translate-y-1 hover:shadow-[0_10px_25px_rgba(0,0,0,0.3)]"
                 >
-                  <div>
-                    <p className="font-medium">{repo.full_name}</p>
-                    <p className="text-zinc-400">
-                      {repo.language ?? "Unknown"} - {repo.stars.toLocaleString()} stars
-                    </p>
+                  {repo.html_url ? (
+                    <a
+                      href={repo.html_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-lg font-semibold text-sky-400 no-underline hover:underline"
+                    >
+                      {repo.full_name}
+                    </a>
+                  ) : (
+                    <div className="text-lg font-semibold text-sky-400">{repo.full_name}</div>
+                  )}
+                  <div className="mt-1 text-sm text-slate-400">
+                    {repo.language || "Unknown"} - ⭐ {repo.stars?.toLocaleString?.() ?? 0}
                   </div>
-                  <a
-                    href={repo.html_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-cyan-300 hover:underline"
-                  >
-                    Open
-                  </a>
+                  <p className="mt-2 text-slate-300">
+                    {(repo.description || "No description available.").slice(0, 150)}
+                    {(repo.description || "").length > 150 ? "..." : ""}
+                  </p>
                 </li>
               ))}
             </ul>

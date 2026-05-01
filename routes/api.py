@@ -8,6 +8,9 @@ api_bp = Blueprint("api_bp", __name__)
 
 
 def resolve_html_url(repo):
+    html_url = (repo.html_url or "").strip() if repo.html_url else ""
+    if html_url:
+        return html_url
     owner = (repo.owner or "").strip() if repo.owner else ""
     name = (repo.name or "").strip() if repo.name else ""
     if owner and name:
@@ -46,6 +49,7 @@ def _serialize_repository(repo, topics_map):
         "forks": repo.forks,
         "language": repo.language,
         "topics": topics_map.get(repo.repo_id, []),
+        "html_url": resolve_html_url(repo),
         "github_url": resolve_html_url(repo),
         "created_at": repo.created_at.isoformat() if repo.created_at else None,
     }
@@ -123,17 +127,26 @@ def get_issues():
 def get_saved_projects():
     from models import Repository, SavedRepository
 
-    saved_projects = (
-        db.session.query(Repository, SavedRepository)
-        .join(SavedRepository, SavedRepository.repo_id == Repository.repo_id)
-        .filter(SavedRepository.user_id == 1)
-        .order_by(SavedRepository.saved_at.desc())
-        .all()
-    )
-    topics_map = _topics_by_repo_id([repo.repo_id for repo, _ in saved_projects])
+    try:
+        # Get user_id from query params (e.g. /saved-projects?user_id=2)
+        user_id = request.args.get("user_id", type=int)
 
-    return jsonify(
-        {
+        # fallback if not provided (safe default)
+        if user_id is None:
+            user_id = 1
+
+        saved_projects = (
+            db.session.query(Repository, SavedRepository)
+            .join(SavedRepository, SavedRepository.repo_id == Repository.repo_id)
+            .filter(SavedRepository.user_id == user_id)
+            .order_by(SavedRepository.saved_at.desc())
+            .all()
+        )
+
+        repo_ids = [repo.repo_id for repo, _ in saved_projects]
+        topics_map = _topics_by_repo_id(repo_ids)
+
+        return jsonify({
             "count": len(saved_projects),
             "saved_projects": [
                 {
@@ -143,9 +156,14 @@ def get_saved_projects():
                 }
                 for repo, saved in saved_projects
             ],
-        }
-    )
+        })
 
+    except Exception as e:
+        return jsonify({
+            "count": 0,
+            "saved_projects": [],
+            "error": str(e)
+        }), 500
 
 @api_bp.route("/recommendations", methods=["GET"])
 def get_recommendations():
@@ -189,26 +207,54 @@ def search_repositories():
     from models import Repository
 
     query = request.args.get("q", "").strip()
-    if not query:
-        return jsonify({"count": 0, "results": []})
+    language = request.args.get("language", "").strip()
+    topic = request.args.get("topic", "").strip()
+    min_stars = request.args.get("min_stars", type=int)
 
-    pattern = f"%{query}%"
-    repositories = (
-        Repository.query.filter(
+    q = Repository.query
+
+    # TEXT SEARCH
+    if query:
+        pattern = f"%{query}%"
+        q = q.filter(
             or_(
                 Repository.full_name.ilike(pattern),
                 Repository.description.ilike(pattern),
             )
         )
-        .order_by(Repository.stars.desc())
-        .limit(20)
-        .all()
-    )
-    topics_map = _topics_by_repo_id([repo.repo_id for repo in repositories])
 
-    return jsonify(
-        {
-            "count": len(repositories),
-            "results": [_serialize_repository(repo, topics_map) for repo in repositories],
-        }
-    )
+    # LANGUAGE FILTER
+    if language:
+        q = q.filter(Repository.language.ilike(language))
+
+    # STARS FILTER
+    if min_stars is not None:
+        q = q.filter(Repository.stars >= min_stars)
+
+    from models import RepositoryTopic, RepoTopic
+
+    # REAL TOPIC FILTER USING JOIN
+    if topic:
+        from models import RepositoryTopic, RepoTopic
+
+        q = q.join(
+            RepositoryTopic,
+            Repository.repo_id == RepositoryTopic.repo_id
+        ).join(
+            RepoTopic,
+            RepoTopic.topic_id == RepositoryTopic.topic_id
+        ).filter(
+            RepoTopic.name.ilike(f"%{topic}%")
+        )
+
+    repositories = q.order_by(Repository.stars.desc()).limit(20).all()
+
+    topics_map = _topics_by_repo_id([r.repo_id for r in repositories])
+
+    return jsonify({
+        "count": len(repositories),
+        "results": [
+            _serialize_repository(repo, topics_map)
+            for repo in repositories
+        ]
+    })

@@ -5,11 +5,12 @@ interface RepositoryResponse {
   saved_projects: Array<{
     repo_id: number;
     full_name: string;
+    description: string | null;
     owner: string;
     language: string | null;
     stars: number;
     forks: number;
-    html_url: string;
+    html_url: string | null;
   }>;
 }
 

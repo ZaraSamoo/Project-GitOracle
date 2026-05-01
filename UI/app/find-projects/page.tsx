@@ -79,7 +79,7 @@ export default function FindProjectsPage() {
         <section className="mt-8 rounded-3xl border border-white/10 bg-zinc-950/60 p-5 md:p-8">
           <h2 className="text-xl font-semibold">Database Search Results</h2>
           <p className="mt-2 text-sm text-zinc-400">
-            Searches your Flask `repositories` table via `/api/search`.
+            Discover high-signal repositories from your InternHub database, ready to explore.
           </p>
           {isLoading && <p className="mt-4 text-sm text-cyan-300">Loading results...</p>}
           {error && <p className="mt-4 text-sm text-rose-300">{error}</p>}
@@ -89,29 +89,34 @@ export default function FindProjectsPage() {
             </p>
           )}
           {!isLoading && projects.length > 0 && (
-            <ul className="mt-4 space-y-2 text-sm">
+            <ul className="mt-4 space-y-4 text-sm">
               {projects.map((project) => (
                 <li
                   key={project.repo_id}
-                  className="rounded-xl border border-white/10 bg-black/30 px-4 py-3"
+                  className="rounded-xl border border-slate-700 bg-slate-800 p-4 transition-all duration-200 hover:-translate-y-1 hover:shadow-[0_10px_25px_rgba(0,0,0,0.3)]"
                 >
-                  <p className="font-medium">{project.full_name}</p>
-                  <p className="text-zinc-400">
-                    {project.language ?? "Unknown"} - {project.stars.toLocaleString()} stars
-                  </p>
-                  {project.description && (
-                    <p className="mt-1 text-zinc-300">{project.description}</p>
-                  )}
-                  {project.html_url && (
+                  {project.html_url ? (
                     <a
                       href={project.html_url}
                       target="_blank"
-                      rel="noreferrer"
-                      className="mt-2 inline-block text-cyan-300 hover:underline"
+                      rel="noopener noreferrer"
+                      className="text-lg font-semibold text-sky-400 no-underline hover:underline"
                     >
-                      Open Repository
+                      {project.full_name}
                     </a>
+                  ) : (
+                    <div className="text-lg font-semibold text-sky-400">
+                      {project.full_name}
+                    </div>
                   )}
+                  <div className="mt-1 text-sm text-slate-400">
+                    {project.language || "Unknown"} - ⭐{" "}
+                    {project.stars?.toLocaleString?.() ?? 0}
+                  </div>
+                  <p className="mt-2 text-slate-300">
+                    {(project.description || "No description available.").slice(0, 150)}
+                    {(project.description || "").length > 150 ? "..." : ""}
+                  </p>
                 </li>
               ))}
             </ul>
