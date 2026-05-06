@@ -2,119 +2,123 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Sparkles } from "lucide-react";
-import { AppHeader } from "@/components/app-header";
 import { flaskRequest } from "@/lib/flask-api";
-import { setSessionToken, setSessionUserId } from "@/lib/auth-session";
+import {
+  setSessionEmail,
+  setSessionRole,
+  setSessionToken,
+  setSessionUserId,
+  setSessionUsername,
+} from "@/lib/auth-session";
 
-interface UsersResponse {
-  users: Array<{
-    user_id: number;
-  }>;
-}
+const SKILLS = [
+  "Python",
+  "JavaScript",
+  "TypeScript",
+  "React",
+  "Next.js",
+  "Node.js",
+  "Flask",
+  "Django",
+  "SQL",
+  "PostgreSQL",
+  "Machine Learning",
+  "DevOps",
+  "Docker",
+  "Cybersecurity",
+  "Data Visualization",
+];
 
 export default function CreateAccountPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
+
+  const toggleSkill = (skill: string) => {
+    setSelectedSkills((current) =>
+      current.includes(skill)
+        ? current.filter((item) => item !== skill)
+        : [...current, skill]
+    );
+  };
+
+  const handleRegister = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError(null);
+    const formData = new FormData(event.currentTarget);
+    const username = String(formData.get("username") ?? "").trim();
+    const email = String(formData.get("email") ?? "").trim();
+    const password = String(formData.get("password") ?? "");
+
+    try {
+      const data = await flaskRequest<{
+        user: { user_id: number; username: string; email: string; role: string };
+      }>({
+        path: "/api/auth/register",
+        method: "POST",
+        body: JSON.stringify({ username, email, password, skills: selectedSkills }),
+      });
+      setSessionUserId(data.user.user_id);
+      setSessionToken(data.user.username);
+      setSessionRole(data.user.role);
+      setSessionUsername(data.user.username);
+      setSessionEmail(data.user.email);
+      router.push("/user-profile");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Failed to create account.");
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-black text-white">
-      <AppHeader />
-      <main className="mx-auto max-w-6xl px-4 py-10">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold md:text-5xl">Create Account</h1>
-          <p className="mt-3 max-w-2xl text-zinc-300">
-            Create your GitOracle profile to save repositories, personalize recommendations, and
-            track progress by weekly time budget.
+    <div className="flex h-[100dvh] w-[100dvw] flex-col bg-background font-geist text-foreground md:flex-row">
+      <section className="flex flex-1 items-center justify-center p-8">
+        <div className="w-full max-w-md">
+          <h1 className="text-4xl font-semibold leading-tight md:text-5xl">Create Account</h1>
+          <p className="mt-3 text-muted-foreground">
+            Same smooth login style, now with a complete profile and skill set setup.
           </p>
-        </div>
-
-        <section className="grid gap-8 lg:grid-cols-2">
-          <form
-            className="rounded-2xl border border-white/10 bg-zinc-950/60 p-6"
-            onSubmit={async (event) => {
-              event.preventDefault();
-              setError(null);
-              try {
-                const data = await flaskRequest<UsersResponse>({ path: "/api/users" });
-                const fallbackUserId = 1;
-                const userId = data.users[0]?.user_id ?? fallbackUserId;
-                setSessionUserId(userId);
-                setSessionToken(String(userId));
-                router.push("/user-profile");
-              } catch (requestError) {
-                setError(
-                  requestError instanceof Error
-                    ? requestError.message
-                    : "Failed to reach Flask backend."
-                );
-              }
-            }}
-          >
-            <div className="space-y-4">
-              <Field label="Full Name" name="name" type="text" placeholder="Jane Developer" />
-              <Field label="Email" name="email" type="email" placeholder="jane@example.com" />
-              <Field
-                label="Password"
-                name="password"
-                type="password"
-                placeholder="Create a secure password"
-              />
-              <Field
-                label="Preferred Stack"
-                name="stack"
-                type="text"
-                placeholder="e.g. Next.js, Python, Rust"
-              />
+          <form onSubmit={handleRegister} className="mt-6 space-y-4">
+            <input name="username" placeholder="Username" className="w-full rounded-2xl border border-border bg-foreground/5 p-4 text-sm" />
+            <input name="email" type="email" placeholder="Email address" className="w-full rounded-2xl border border-border bg-foreground/5 p-4 text-sm" />
+            <input name="password" type="password" placeholder="Password" className="w-full rounded-2xl border border-border bg-foreground/5 p-4 text-sm" />
+            <div className="rounded-2xl border border-border bg-foreground/5 p-3">
+              <p className="mb-2 text-xs text-muted-foreground">Select your skill set</p>
+              <div className="grid grid-cols-2 gap-2">
+                {SKILLS.map((skill) => (
+                  <button
+                    type="button"
+                    key={skill}
+                    onClick={() => toggleSkill(skill)}
+                    className={`rounded-lg border px-2 py-1 text-xs transition ${
+                      selectedSkills.includes(skill)
+                        ? "border-violet-400 bg-violet-500/20 text-violet-100"
+                        : "border-border hover:bg-secondary"
+                    }`}
+                  >
+                    {skill}
+                  </button>
+                ))}
+              </div>
             </div>
-
-            <button
-              type="submit"
-              className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 font-medium text-black transition hover:bg-zinc-200"
-            >
+            <button type="submit" className="w-full rounded-2xl bg-primary py-4 font-medium text-primary-foreground">
               Create Account
-              <ArrowRight className="h-4 w-4" />
             </button>
-            {error && <p className="mt-3 text-sm text-rose-300">{error}</p>}
+            {error ? <p className="text-center text-sm text-rose-400">{error}</p> : null}
+            <p className="text-center text-sm text-muted-foreground">
+              Already registered?{" "}
+              <button type="button" onClick={() => router.push("/sign-in")} className="text-violet-400 hover:underline">
+                Sign in
+              </button>
+            </p>
           </form>
-
-          <div className="rounded-2xl border border-violet-400/30 bg-gradient-to-br from-violet-500/15 via-fuchsia-500/10 to-cyan-500/15 p-6">
-            <div className="inline-flex items-center gap-2 rounded-full border border-violet-300/40 bg-violet-500/15 px-3 py-1 text-xs uppercase tracking-wider text-violet-200">
-              <Sparkles className="h-3.5 w-3.5" />
-              Why create an account
-            </div>
-            <ul className="mt-4 space-y-3 text-sm text-zinc-100">
-              <li>- Save trending repositories and build your own learning backlog.</li>
-              <li>- Get recommendations based on skill, interests, and free hours.</li>
-              <li>- See difficulty-aware projects instead of random GitHub browsing.</li>
-            </ul>
-          </div>
-        </section>
-      </main>
+        </div>
+      </section>
+      <section className="relative hidden flex-1 p-4 md:block">
+        <div
+          className="absolute inset-4 rounded-3xl bg-cover bg-center"
+          style={{ backgroundImage: "url(https://images.unsplash.com/photo-1518773553398-650c184e0bb3?w=2160&q=80)" }}
+        />
+      </section>
     </div>
-  );
-}
-
-function Field({
-  label,
-  name,
-  type,
-  placeholder,
-}: {
-  label: string;
-  name: string;
-  type: string;
-  placeholder: string;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1.5 block text-sm text-zinc-300">{label}</span>
-      <input
-        name={name}
-        type={type}
-        placeholder={placeholder}
-        className="w-full rounded-xl border border-white/15 bg-black/40 px-4 py-2.5 text-sm text-white outline-none transition focus:border-violet-400/60"
-      />
-    </label>
   );
 }

@@ -44,6 +44,21 @@ export async function flaskRequest<T>({
 
   if (!response.ok) {
     const body = await response.text();
+    const combined = `${response.status} ${response.statusText} ${body}`.toLowerCase();
+    const looksLikeProxyFailure =
+      baseUrl.startsWith("/") &&
+      response.status >= 500 &&
+      combined.includes("internal server error");
+    if (
+      combined.includes("econnrefused") ||
+      combined.includes("failed to proxy") ||
+      combined.includes("connect error") ||
+      looksLikeProxyFailure
+    ) {
+      throw new Error(
+        "Flask backend is not running on http://127.0.0.1:5000. Start backend with `python app.py` from the `InternHub` folder."
+      );
+    }
     throw new Error(
       `Flask request failed: ${response.status} ${response.statusText}${body ? ` - ${body}` : ""}`
     );

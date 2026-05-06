@@ -5,13 +5,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { SignInPage, type Testimonial } from "@/components/ui/sign-in";
 import { flaskRequest } from "@/lib/flask-api";
-import { setSessionToken, setSessionUserId } from "@/lib/auth-session";
-
-interface UsersResponse {
-  users: Array<{
-    user_id: number;
-  }>;
-}
+import {
+  setSessionEmail,
+  setSessionRole,
+  setSessionToken,
+  setSessionUserId,
+  setSessionUsername,
+} from "@/lib/auth-session";
 
 const sampleTestimonials: Testimonial[] = [
   {
@@ -41,16 +41,27 @@ export default function SignInRoute() {
   const handleSignIn = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
-    console.log("Sign In submitted:", Object.fromEntries(formData.entries()));
+    const usernameOrEmail = String(formData.get("usernameOrEmail") ?? "").trim();
+    const password = String(formData.get("password") ?? "");
+    const submitEvent = event.nativeEvent as SubmitEvent;
+    const submitter = submitEvent.submitter as HTMLButtonElement | null;
+    const adminOnly = submitter?.value === "admin";
     setError(null);
 
     try {
-      const data = await flaskRequest<UsersResponse>({ path: "/api/users" });
-      const fallbackUserId = 1;
-      const userId = data.users[0]?.user_id ?? fallbackUserId;
-      setSessionUserId(userId);
-      setSessionToken(String(userId));
-      router.push("/user-profile");
+      const data = await flaskRequest<{
+        user: { user_id: number; username: string; email: string; role: string };
+      }>({
+        path: "/api/auth/login",
+        method: "POST",
+        body: JSON.stringify({ usernameOrEmail, password, adminOnly }),
+      });
+      setSessionUserId(data.user.user_id);
+      setSessionToken(data.user.username);
+      setSessionRole(data.user.role);
+      setSessionUsername(data.user.username);
+      setSessionEmail(data.user.email);
+      router.push(data.user.role === "admin" ? "/admin" : "/user-profile");
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -68,10 +79,11 @@ export default function SignInRoute() {
       <SignInPage
         heroImageSrc="https://images.unsplash.com/photo-1642615835477-d303d7dc9ee9?w=2160&q=80"
         testimonials={sampleTestimonials}
-        onSignIn={handleSignIn}
-        onGoogleSignIn={() => console.log("Continue with Google clicked")}
+        onSignIn={(event) => void handleSignIn(event)}
+        showAdminOption
         onResetPassword={() => console.log("Reset Password clicked")}
         onCreateAccount={() => router.push("/create-account")}
+        bottomNote="Admin credentials: username haris, password gitoracle"
       />
     </div>
   );

@@ -28,7 +28,7 @@ DB_CONFIG = {
     "port": int(os.getenv("PG_PORT", "5432")),
     "dbname": os.getenv("PG_DB", "Git_Oracle"),
     "user": os.getenv("PG_USER", "postgres"),
-    "password": os.getenv("PG_PASSWORD", "zed14axe"),
+    "password": os.getenv("PG_PASSWORD", "574209"),
 }
 
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "500"))

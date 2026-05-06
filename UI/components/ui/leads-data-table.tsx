@@ -9,6 +9,8 @@ interface LeadsTableProps {
   title?: string;
   leads?: TrendingRepo[];
   className?: string;
+  primaryActionLabel?: string;
+  onPrimaryAction?: (repo: TrendingRepo) => void;
 }
 
 const difficultyStyles: Record<TrendingRepo["difficulty"], string> = {
@@ -18,7 +20,14 @@ const difficultyStyles: Record<TrendingRepo["difficulty"], string> = {
   high: "bg-rose-500/15 text-rose-300 border-rose-400/30",
 };
 
-export function LeadsTable({ title = "Trending Repositories", leads = [], className = "" }: LeadsTableProps) {
+export function LeadsTable({
+  title = "Trending Repositories",
+  leads = [],
+  className = "",
+  primaryActionLabel,
+  onPrimaryAction,
+}: LeadsTableProps) {
+  const hasAction = Boolean(primaryActionLabel && onPrimaryAction);
   return (
     <div className={`w-full ${className}`}>
       <div className="mb-4 flex items-center justify-between">
@@ -27,7 +36,7 @@ export function LeadsTable({ title = "Trending Repositories", leads = [], classN
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/60">
-        <div className="grid grid-cols-8 gap-3 border-b border-white/10 px-4 py-3 text-xs uppercase tracking-wide text-zinc-400">
+        <div className={`grid ${hasAction ? "grid-cols-9" : "grid-cols-8"} gap-3 border-b border-white/10 px-4 py-3 text-xs uppercase tracking-wide text-zinc-400`}>
           <div className="col-span-2">Repository</div>
           <div>Stars</div>
           <div>Forks</div>
@@ -35,21 +44,21 @@ export function LeadsTable({ title = "Trending Repositories", leads = [], classN
           <div>Open Issues</div>
           <div>PRs</div>
           <div>Difficulty</div>
+          {hasAction ? <div>Action</div> : null}
         </div>
 
         {leads.map((repo, idx) => (
-          <motion.a
+          <motion.div
             key={repo.id}
-            href={repo.url}
-            target="_blank"
-            rel="noreferrer"
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: idx * 0.06, duration: 0.25 }}
-            className="grid grid-cols-8 gap-3 border-b border-white/5 px-4 py-3 transition-colors hover:bg-white/[0.03]"
+            className={`grid ${hasAction ? "grid-cols-9" : "grid-cols-8"} gap-3 border-b border-white/5 px-4 py-3 transition-colors hover:bg-white/[0.03]`}
           >
             <div className="col-span-2 min-w-0">
-              <div className="truncate font-medium text-white">{repo.name}</div>
+              <a href={repo.url} target="_blank" rel="noreferrer" className="truncate font-medium text-white hover:underline">
+                {repo.name}
+              </a>
               <div className="mt-1 truncate text-xs text-zinc-400">
                 {repo.languages.slice(0, 3).join(" • ") || "No languages detected"}
               </div>
@@ -64,7 +73,18 @@ export function LeadsTable({ title = "Trending Repositories", leads = [], classN
                 {repo.difficulty}
               </span>
             </div>
-          </motion.a>
+            {hasAction ? (
+              <div className="flex items-center">
+                <button
+                  type="button"
+                  onClick={() => onPrimaryAction?.(repo)}
+                  className="rounded-lg border border-cyan-400/40 bg-cyan-500/10 px-2 py-1 text-xs text-cyan-200 hover:bg-cyan-500/20"
+                >
+                  {primaryActionLabel}
+                </button>
+              </div>
+            ) : null}
+          </motion.div>
         ))}
       </div>
     </div>

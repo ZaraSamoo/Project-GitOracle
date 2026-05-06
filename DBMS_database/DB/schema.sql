@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS user_availability (
 
 DROP TABLE IF EXISTS repositories CASCADE;
 
-CREATE TABLE repositories (
+CREATE TABLE IF NOT EXISTS repositories (
     repo_id     SERIAL       PRIMARY KEY,
     github_id   BIGINT       UNIQUE NOT NULL,       -- GitHub API field: id
     owner       VARCHAR(100) NOT NULL,               -- GitHub API field: owner.login
@@ -271,7 +271,7 @@ END;
 $$;
 
 DROP TRIGGER IF EXISTS trg_issue_updated ON issues;
-CREATE TRIGGER trg_issue_updated
+CREATE TRIGGER if not exists trg_issue_updated
     BEFORE UPDATE ON issues
     FOR EACH ROW EXECUTE FUNCTION trg_update_issue_timestamp();
 
@@ -288,7 +288,7 @@ END;
 $$;
 
 DROP TRIGGER IF EXISTS trg_assignment_status_log ON assignments;
-CREATE TRIGGER trg_assignment_status_log
+CREATE TRIGGER if not exists trg_assignment_status_log
     AFTER UPDATE ON assignments
     FOR EACH ROW EXECUTE FUNCTION trg_log_assignment_change();
 
@@ -307,7 +307,7 @@ END;
 $$;
 
 DROP TRIGGER IF EXISTS trg_assignment_timestamps ON assignments;
-CREATE TRIGGER trg_assignment_timestamps
+CREATE TRIGGER uf not exists trg_assignment_timestamps
     BEFORE UPDATE ON assignments
     FOR EACH ROW EXECUTE FUNCTION trg_set_started_at();
 

@@ -1,5 +1,10 @@
 from flask import Blueprint, jsonify, request
+import csv
+from pathlib import Path
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import func
+from datetime import datetime
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from extensions import db
 
@@ -126,6 +131,96 @@ def _compute_difficulty_score(repo, topic_names):
     return stars_score + _topic_modifier(topic_names)
 
 
+def _normalize_skill_name(name):
+    return (name or "").strip().lower()
+
+
+def _auth_csv_path():
+    return Path(__file__).resolve().parent.parent / "DBMS_database" / "auth_users.csv"
+
+
+def _append_auth_user_csv(username, email, password, skills, role="user"):
+    path = _auth_csv_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    file_exists = path.exists()
+    with path.open("a", encoding="utf-8", newline="") as csv_file:
+        writer = csv.writer(csv_file)
+        if not file_exists or path.stat().st_size == 0:
+            writer.writerow(
+                ["username", "email", "password", "skills", "role", "saved_repo_ids", "completed_repo_ids"]
+            )
+        writer.writerow(
+            [
+                username,
+                email,
+                password,
+                ",".join(skills),
+                role,
+                "",
+                "",
+            ]
+        )
+
+
+def _sync_user_repo_lists_to_csv(user_id):
+    from models import SavedRepository, User
+
+    user = User.query.filter_by(user_id=user_id).first()
+    if not user:
+        return
+
+    saved_rows = SavedRepository.query.filter_by(user_id=user_id).all()
+    saved_ids = sorted([row.repo_id for row in saved_rows if not row.is_completed])
+    completed_ids = sorted([row.repo_id for row in saved_rows if row.is_completed])
+    saved_serialized = ",".join(str(repo_id) for repo_id in saved_ids)
+    completed_serialized = ",".join(str(repo_id) for repo_id in completed_ids)
+
+    path = _auth_csv_path()
+    if not path.exists():
+        return
+
+    with path.open("r", encoding="utf-8", newline="") as csv_file:
+        reader = csv.DictReader(csv_file)
+        fieldnames = reader.fieldnames or [
+            "username",
+            "email",
+            "password",
+            "skills",
+            "role",
+            "saved_repo_ids",
+            "completed_repo_ids",
+        ]
+        rows = list(reader)
+
+    updated = False
+    for row in rows:
+        row_username = (row.get("username") or "").strip().lower()
+        row_email = (row.get("email") or "").strip().lower()
+        if row_username == (user.username or "").strip().lower() or row_email == (user.email or "").strip().lower():
+            row["saved_repo_ids"] = saved_serialized
+            row["completed_repo_ids"] = completed_serialized
+            updated = True
+            break
+
+    if not updated:
+        rows.append(
+            {
+                "username": user.username or "",
+                "email": user.email or "",
+                "password": "",
+                "skills": "",
+                "role": "admin" if (user.username or "").lower() == "haris" else "user",
+                "saved_repo_ids": saved_serialized,
+                "completed_repo_ids": completed_serialized,
+            }
+        )
+
+    with path.open("w", encoding="utf-8", newline="") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
 @api_bp.route("/users", methods=["GET"])
 def get_users():
     from models import User
@@ -143,6 +238,186 @@ def get_users():
                     "created_at": user.created_at.isoformat() if user.created_at else None,
                 }
                 for user in users
+            ],
+        }
+    )
+
+
+@api_bp.route("/auth/register", methods=["POST"])
+def register_user():
+    from models import Skill, User, UserSkill
+
+    payload = request.get_json(silent=True) or {}
+    username = str(payload.get("username") or "").strip()
+    email = str(payload.get("email") or "").strip().lower()
+    password = str(payload.get("password") or "")
+    skills = payload.get("skills") if isinstance(payload.get("skills"), list) else []
+
+    if not username or not email or not password:
+        return jsonify({"error": "Username, email, and password are required."}), 400
+
+    if len(password) < 6:
+        return jsonify({"error": "Password must be at least 6 characters long."}), 400
+
+    username_exists = User.query.filter(User.username.ilike(username)).first()
+    if username_exists:
+        return jsonify({"error": "Username is already taken."}), 409
+
+    email_exists = User.query.filter(User.email.ilike(email)).first()
+    if email_exists:
+        return jsonify({"error": "Email is already registered."}), 409
+
+    password_hash = generate_password_hash(password)
+    user = User(username=username, email=email, password_hash=password_hash)
+    db.session.add(user)
+    db.session.flush()
+
+    normalized_input_skills = {
+        _normalize_skill_name(skill_name)
+        for skill_name in skills
+        if isinstance(skill_name, str) and skill_name.strip()
+    }
+    if normalized_input_skills:
+        existing_skills = Skill.query.filter(Skill.name.in_(list(skills))).all()
+        existing_by_normalized = {_normalize_skill_name(skill.name): skill for skill in existing_skills}
+        for normalized in normalized_input_skills:
+            skill = existing_by_normalized.get(normalized)
+            if skill is None:
+                skill = Skill(name=normalized.title(), category="general")
+                db.session.add(skill)
+                db.session.flush()
+            db.session.add(UserSkill(user_id=user.user_id, skill_id=skill.skill_id, proficiency=3))
+
+    db.session.commit()
+    _append_auth_user_csv(username=username, email=email, password=password, skills=sorted(normalized_input_skills))
+    return jsonify(
+        {
+            "message": "Account created successfully.",
+            "user": {
+                "user_id": user.user_id,
+                "username": user.username,
+                "email": user.email,
+                "role": "user",
+            },
+        }
+    ), 201
+
+
+@api_bp.route("/auth/login", methods=["POST"])
+def login_user():
+    from models import User
+
+    payload = request.get_json(silent=True) or {}
+    username_or_email = str(payload.get("usernameOrEmail") or "").strip()
+    password = str(payload.get("password") or "")
+    admin_only = bool(payload.get("adminOnly"))
+
+    if not username_or_email or not password:
+        return jsonify({"error": "Username/email and password are required."}), 400
+
+    # Built-in admin login used by the UI note.
+    if username_or_email.lower() == "haris" and password == "gitoracle":
+        return jsonify(
+            {
+                "message": "Login successful.",
+                "user": {
+                    "user_id": 0,
+                    "username": "haris",
+                    "email": "admin@internhub.local",
+                    "role": "admin",
+                },
+            }
+        )
+
+    user = User.query.filter(
+        (User.username.ilike(username_or_email)) | (User.email.ilike(username_or_email))
+    ).first()
+    if not user or not check_password_hash(user.password_hash or "", password):
+        return jsonify({"error": "Invalid credentials."}), 401
+
+    role = "user"
+    if admin_only and role != "admin":
+        return jsonify({"error": "Admin access denied."}), 403
+
+    return jsonify(
+        {
+            "message": "Login successful.",
+            "user": {
+                "user_id": user.user_id,
+                "username": user.username,
+                "email": user.email,
+                "role": role,
+            },
+        }
+    )
+
+
+@api_bp.route("/admin/overview", methods=["GET"])
+def admin_overview():
+    from models import Issue, Repository, SavedRepository, User
+
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header.split(" ", 1)[1].strip() if auth_header.startswith("Bearer ") else ""
+    if token.lower() != "haris":
+        return jsonify({"error": "Admin authorization required."}), 403
+
+    total_users = db.session.query(func.count(User.user_id)).scalar() or 0
+    total_repositories = db.session.query(func.count(Repository.repo_id)).scalar() or 0
+    total_saved = db.session.query(func.count()).select_from(SavedRepository).scalar() or 0
+    open_issues = (
+        db.session.query(func.count(Issue.issue_id)).filter(Issue.state == "open").scalar() or 0
+    )
+    closed_issues = (
+        db.session.query(func.count(Issue.issue_id)).filter(Issue.state == "closed").scalar() or 0
+    )
+
+    language_rows = (
+        db.session.query(Repository.language, func.count(Repository.repo_id))
+        .filter(Repository.language.isnot(None))
+        .group_by(Repository.language)
+        .order_by(func.count(Repository.repo_id).desc())
+        .limit(8)
+        .all()
+    )
+
+    top_repositories = (
+        Repository.query.order_by(Repository.stars.desc()).limit(10).all()
+    )
+
+    newest_users = User.query.order_by(User.created_at.desc()).limit(8).all()
+
+    return jsonify(
+        {
+            "summary": {
+                "total_users": int(total_users),
+                "total_repositories": int(total_repositories),
+                "total_saved_projects": int(total_saved),
+                "open_issues": int(open_issues),
+                "closed_issues": int(closed_issues),
+            },
+            "languages": [
+                {"name": language or "Unknown", "count": int(count)}
+                for language, count in language_rows
+            ],
+            "top_repositories": [
+                {
+                    "repo_id": repo.repo_id,
+                    "full_name": repo.full_name,
+                    "language": repo.language,
+                    "stars": repo.stars or 0,
+                    "forks": repo.forks or 0,
+                    "html_url": resolve_html_url(repo),
+                }
+                for repo in top_repositories
+            ],
+            "newest_users": [
+                {
+                    "user_id": user.user_id,
+                    "username": user.username,
+                    "email": user.email,
+                    "created_at": user.created_at.isoformat() if user.created_at else None,
+                }
+                for user in newest_users
             ],
         }
     )
@@ -222,6 +497,7 @@ def get_saved_projects():
             )
             .join(SavedRepository, SavedRepository.repo_id == Repository.repo_id)
             .filter(SavedRepository.user_id == user_id)
+            .filter(SavedRepository.is_completed.is_(False))
             .order_by(SavedRepository.saved_at.desc())
             .limit(50)
             .all()
@@ -255,6 +531,117 @@ def get_saved_projects():
             "saved_projects": [],
             "error": str(e)
         }), 500
+
+
+@api_bp.route("/completed-repos", methods=["GET"])
+def get_completed_projects():
+    from models import Repository, SavedRepository
+
+    user_id = _extract_user_id_from_request()
+    if user_id is None:
+        return jsonify({"count": 0, "completed_projects": [], "error": "Missing authenticated user context."}), 401
+
+    rows = (
+        db.session.query(
+            Repository.repo_id,
+            Repository.full_name,
+            Repository.description,
+            Repository.owner,
+            Repository.language,
+            Repository.stars,
+            Repository.forks,
+            Repository.html_url,
+            SavedRepository.saved_at,
+        )
+        .join(SavedRepository, SavedRepository.repo_id == Repository.repo_id)
+        .filter(SavedRepository.user_id == user_id)
+        .filter(SavedRepository.is_completed.is_(True))
+        .order_by(SavedRepository.saved_at.desc())
+        .limit(50)
+        .all()
+    )
+
+    return jsonify(
+        {
+            "count": len(rows),
+            "completed_projects": [
+                {
+                    "user_id": user_id,
+                    "repo_id": row.repo_id,
+                    "full_name": row.full_name,
+                    "description": row.description,
+                    "owner": row.owner,
+                    "language": row.language,
+                    "stars": row.stars,
+                    "forks": row.forks,
+                    "html_url": row.html_url,
+                    "saved_at": row.saved_at.isoformat() if row.saved_at else None,
+                }
+                for row in rows
+            ],
+        }
+    )
+
+
+@api_bp.route("/saved-repos", methods=["POST"])
+def save_repository():
+    from models import Repository, SavedRepository
+
+    payload = request.get_json(silent=True) or {}
+    user_id = _extract_user_id_from_request() or payload.get("user_id")
+    if user_id is None:
+        return jsonify({"error": "Missing authenticated user context."}), 401
+    try:
+        user_id = int(user_id)
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid user_id."}), 400
+
+    repo_id = payload.get("repo_id")
+    if repo_id is None:
+        return jsonify({"error": "repo_id is required."}), 400
+
+    repo = Repository.query.filter_by(repo_id=repo_id).first()
+    if not repo:
+        return jsonify({"error": "Repository not found."}), 404
+
+    saved_row = SavedRepository.query.filter_by(user_id=user_id, repo_id=repo_id).first()
+    if saved_row:
+        saved_row.is_completed = False
+        saved_row.saved_at = datetime.utcnow()
+    else:
+        saved_row = SavedRepository(user_id=user_id, repo_id=repo_id, is_completed=False)
+        db.session.add(saved_row)
+
+    db.session.commit()
+    _sync_user_repo_lists_to_csv(user_id)
+    return jsonify({"message": "Repository saved.", "repo_id": repo_id, "user_id": user_id})
+
+
+@api_bp.route("/saved-repos/complete", methods=["POST"])
+def complete_saved_repository():
+    from models import SavedRepository
+
+    payload = request.get_json(silent=True) or {}
+    user_id = _extract_user_id_from_request() or payload.get("user_id")
+    if user_id is None:
+        return jsonify({"error": "Missing authenticated user context."}), 401
+    try:
+        user_id = int(user_id)
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid user_id."}), 400
+
+    repo_id = payload.get("repo_id")
+    if repo_id is None:
+        return jsonify({"error": "repo_id is required."}), 400
+
+    saved_row = SavedRepository.query.filter_by(user_id=user_id, repo_id=repo_id).first()
+    if not saved_row:
+        return jsonify({"error": "Repository is not saved yet."}), 404
+
+    saved_row.is_completed = True
+    db.session.commit()
+    _sync_user_repo_lists_to_csv(user_id)
+    return jsonify({"message": "Repository marked as completed.", "repo_id": repo_id, "user_id": user_id})
 
 @api_bp.route("/recommendations", methods=["GET"])
 def get_recommendations():

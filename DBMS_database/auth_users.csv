@@ -1,0 +1,8 @@
+username,email,password,skills,role,saved_repo_ids,completed_repo_ids
+haris,admin@gitoracle.local,gitoracle,Admin,admin,"1,4563,4615,4703,4918",1
+hamza,harisfarooqbuilds@gmail.com,hello,"Python,TypeScript,Next.js,PostgreSQL",user,,
+haris23,harisbuilds@gmail.com,test,Machine Learning,user,,
+new2,new2@gmail.com,pleasework,python,user,"30,4548,4563,4615,4703,4918",
+qwerty,querty@gmail.com,qwertyqwerty,"django,python,sql",user,4546,
+tmpcsv,tmpcsv@example.com,secret123,python,user,,
+last,lastt@gmail.com,lastlast,"python,typescript",user,,4703

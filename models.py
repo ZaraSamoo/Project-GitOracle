@@ -137,6 +137,7 @@ class SavedRepository(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.user_id'), primary_key=True)
     repo_id = db.Column(db.Integer, db.ForeignKey('repositories.repo_id'), primary_key=True)
     saved_at = db.Column(db.DateTime, default=datetime.utcnow)
+    is_completed = db.Column(db.Boolean, default=False, nullable=False)
     __table_args__ = (
         db.Index('idx_saved_user', 'user_id'),
         db.Index('idx_saved_repo', 'repo_id'),

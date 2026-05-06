@@ -4,12 +4,12 @@ import os
 
 load_dotenv()
 
-print("🛠️ Polishing demo data...")
+print(" Polishing demo data...")
 # DB Connection
 conn = psycopg2.connect(
     host=os.getenv("PG_HOST", "localhost"), port=os.getenv("PG_PORT", "5432"),
     dbname=os.getenv("PG_DB", "Git_Oracle"), user=os.getenv("PG_USER", "postgres"),
-    password=os.getenv("PG_PASSWORD", "zed14axe")
+    password=os.getenv("PG_PASSWORD", "574209")
 )
 
 # Authenticated Open Source Bounties
@@ -23,7 +23,7 @@ REAL_BOUNTIES = [
 
 def run_authentic_demo_injection():
     with conn.cursor() as cur:
-        print("🛠️ Polishing demo data...")
+        print(" Polishing demo data...")
         
         for data in REAL_BOUNTIES:
             # 1. Try to find the specific repo
@@ -35,13 +35,13 @@ def run_authentic_demo_injection():
                 target_repo_id = row[0]
                 repo_display_name = data['repo']
             else:
-                # ⚠️ FALLBACK: Grab the highest star repo available if the famous one is missing
+                #  FALLBACK: Grab the highest star repo available if the famous one is missing
                 cur.execute("SELECT repo_id, full_name FROM repositories ORDER BY stars DESC LIMIT 1;")
                 fallback = cur.fetchone()
                 if fallback:
                     target_repo_id = fallback[0]
                     repo_display_name = f"{fallback[1]} (Fallback)"
-                    print(f"⚠️ {data['repo']} not found. Mapping to: {repo_display_name}")
+                    print(f" {data['repo']} not found. Mapping to: {repo_display_name}")
 
             if target_repo_id:
                 # 2. Deterministic ID: Consistent across runs, no collisions (FIX #1)
@@ -64,13 +64,13 @@ def run_authentic_demo_injection():
                                (%s, 'authentic-demo', '00ff00')
                         ON CONFLICT DO NOTHING;
                     """, (issue_id, issue_id))
-                    print(f"✅ Issue linked to {repo_display_name}")
+                    print(f" Issue linked to {repo_display_name}")
 
         conn.commit()
-        print("\n✨ Demo data is now authentic and stable.")
+        print("\n Demo data is now authentic and stable.")
 
 # Remove the "if __name__ == '__main__':" and just call it directly at the bottom:
-print("🚀 SCRIPT IS STARTING...")
+print(" SCRIPT IS STARTING...")
 run_authentic_demo_injection()
 conn.close()
-print("🏁 SCRIPT FINISHED.")
+print(" SCRIPT FINISHED.")

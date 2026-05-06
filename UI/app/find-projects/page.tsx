@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AppHeader } from "@/components/app-header";
 import { flaskRequest } from "@/lib/flask-api";
+import { LeadsTable } from "@/components/ui/leads-data-table";
+import type { TrendingRepo } from "@/lib/github-trending";
+import { getSessionToken, getSessionUserId } from "@/lib/auth-session";
 
 interface RepositoryResult {
   repo_id: number;
@@ -151,16 +154,18 @@ export default function FindProjectsPage() {
   useEffect(() => {
     if (isFirstLoadRef.current) {
       isFirstLoadRef.current = false;
-      void runSearch(filters);
-      return;
+      const timer = window.setTimeout(() => {
+        void runSearch(filters);
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
     if (!weakKeywordReason) {
-      void runSearch(filters);
-    } else if (filters.keyword) {
-      setError(weakKeywordReason);
-      setProjects([]);
-      setDidSearch(true);
+      const timer = window.setTimeout(() => {
+        void runSearch(filters);
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
+    return undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters, weakKeywordReason]);
 
@@ -195,37 +200,49 @@ export default function FindProjectsPage() {
     return "Try selecting a language or adding a keyword.";
   }, [didSearch, isLoading, error, projects.length, filters]);
 
-  const renderRepoCard = (project: RepositoryResult) => (
-    <li
-      key={project.repo_id}
-      className="rounded-xl border border-slate-700 bg-slate-800 p-4 transition-all duration-200 hover:-translate-y-1 hover:shadow-[0_10px_25px_rgba(0,0,0,0.3)]"
-    >
-      {project.html_url ? (
-        <a
-          href={project.html_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-lg font-semibold text-sky-400 no-underline hover:underline"
-        >
-          {project.full_name}
-        </a>
-      ) : (
-        <div className="text-lg font-semibold text-sky-400">{project.full_name}</div>
-      )}
-      <div className="mt-1 text-sm text-slate-400">
-        {project.language || "Unknown"} - ⭐ {project.stars?.toLocaleString?.() ?? 0}
-      </div>
-      {project.difficulty_score !== null && (
-        <div className="mt-1 text-xs text-violet-200">
-          Difficulty score: {project.difficulty_score.toFixed(1)}
-        </div>
-      )}
-      <p className="mt-2 text-slate-300">
-        {(project.description || "No description available.").slice(0, 150)}
-        {(project.description || "").length > 150 ? "..." : ""}
-      </p>
-    </li>
+  const tableRows = useMemo<TrendingRepo[]>(
+    () =>
+      projects.map((project, idx) => {
+        const diff = project.difficulty_score ?? 3;
+        return {
+          id: String(project.repo_id ?? idx),
+          name: project.full_name,
+          owner: project.full_name.split("/")[0] || "unknown",
+          url: project.html_url || "#",
+          stars: project.stars || 0,
+          forks: 0,
+          openIssues: Math.max(0, Math.round((project.difficulty_score || 2) * 6)),
+          watchers: Math.max(1, Math.round((project.stars || 0) * 0.3)),
+          sizeKb: Math.max(100, Math.round((project.stars || 1) * 2)),
+          contributors: Math.max(1, Math.round((project.difficulty_score || 2) * 3)),
+          pullRequests: Math.max(1, Math.round((project.difficulty_score || 2) * 2)),
+          commitActivity: diff <= 2 ? "Low" : diff <= 4 ? "Medium" : "High",
+          languages: [project.language || "Unknown"],
+          difficulty: diff <= 2 ? "low" : diff <= 4 ? "medium" : diff <= 5 ? "amateur" : "high",
+        };
+      }),
+    [projects]
   );
+
+  const handleSaveRepo = async (repo: TrendingRepo) => {
+    const userId = getSessionUserId();
+    const token = getSessionToken();
+    if (!userId) {
+      setError("Please sign in first to save repositories.");
+      return;
+    }
+    try {
+      await flaskRequest({
+        path: "/api/saved-repos",
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: JSON.stringify({ repo_id: Number(repo.id), user_id: userId }),
+      });
+      setError(null);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Failed to save repository.");
+    }
+  };
 
   return (
     <div className="min-h-screen bg-black text-white">
@@ -380,13 +397,29 @@ export default function FindProjectsPage() {
             </div>
           )}
           {!isLoading && projects.length > 0 && (
-            <ul className="mt-4 space-y-4 text-sm">{projects.map(renderRepoCard)}</ul>
+            <div className="mt-4">
+              <LeadsTable
+                title="Matched Repositories"
+                leads={tableRows}
+                primaryActionLabel="Save"
+                onPrimaryAction={handleSaveRepo}
+              />
+            </div>
           )}
           {!isLoading && suggestions.length > 0 && (
             <div className="mt-6">
               <h3 className="text-lg font-semibold text-cyan-200">Suggested alternatives</h3>
               <p className="mt-1 text-sm text-zinc-400">{suggestionLabel}</p>
-              <ul className="mt-3 space-y-4 text-sm">{suggestions.map(renderRepoCard)}</ul>
+              <ul className="mt-3 space-y-4 text-sm">
+                {suggestions.map((project) => (
+                  <li key={project.repo_id} className="rounded-xl border border-slate-700 bg-slate-800 p-4">
+                    <a href={project.html_url || "#"} target="_blank" rel="noopener noreferrer" className="text-lg font-semibold text-sky-400 hover:underline">
+                      {project.full_name}
+                    </a>
+                    <div className="mt-1 text-sm text-slate-400">{project.language || "Unknown"} - ⭐ {project.stars?.toLocaleString?.() ?? 0}</div>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
           {!isLoading && projects.length > 0 && (

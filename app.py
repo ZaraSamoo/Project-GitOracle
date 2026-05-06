@@ -1,6 +1,7 @@
 from flask import Flask
 from flask_cors import CORS
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from config import Config
 from extensions import db, migrate
 from routes.api import api_bp
@@ -20,28 +21,32 @@ def create_app():
     # import models AFTER db init (IMPORTANT)
     with app.app_context():
         import models
-        db.session.execute(
-            text("CREATE INDEX IF NOT EXISTS idx_repo_language ON repositories(language)")
-        )
-        db.session.execute(
-            text("CREATE INDEX IF NOT EXISTS idx_repo_stars ON repositories(stars)")
-        )
-        db.session.execute(
-            text("CREATE INDEX IF NOT EXISTS idx_repo_topics_name ON repo_topics(name)")
-        )
-        db.session.execute(
-            text("CREATE INDEX IF NOT EXISTS idx_repo_topics_repo_id ON repository_topics(repo_id)")
-        )
-        db.session.execute(
-            text("CREATE INDEX IF NOT EXISTS idx_saved_user ON saved_repositories(user_id)")
-        )
-        db.session.execute(
-            text("CREATE INDEX IF NOT EXISTS idx_saved_repo ON saved_repositories(repo_id)")
-        )
-        db.session.execute(
-            text("CREATE INDEX IF NOT EXISTS idx_saved_user_repo ON saved_repositories(user_id, repo_id)")
-        )
-        db.session.commit()
+        try:
+            db.session.execute(
+                text("CREATE INDEX IF NOT EXISTS idx_repo_language ON repositories(language)")
+            )
+            db.session.execute(
+                text("CREATE INDEX IF NOT EXISTS idx_repo_stars ON repositories(stars)")
+            )
+            db.session.execute(
+                text("CREATE INDEX IF NOT EXISTS idx_repo_topics_name ON repo_topics(name)")
+            )
+            db.session.execute(
+                text("CREATE INDEX IF NOT EXISTS idx_repo_topics_repo_id ON repository_topics(repo_id)")
+            )
+            db.session.execute(
+                text("CREATE INDEX IF NOT EXISTS idx_saved_user ON saved_repositories(user_id)")
+            )
+            db.session.execute(
+                text("CREATE INDEX IF NOT EXISTS idx_saved_repo ON saved_repositories(repo_id)")
+            )
+            db.session.execute(
+                text("CREATE INDEX IF NOT EXISTS idx_saved_user_repo ON saved_repositories(user_id, repo_id)")
+            )
+            db.session.commit()
+        except SQLAlchemyError:
+            # Allow app startup during first-time migration bootstrap.
+            db.session.rollback()
     app.register_blueprint(api_bp, url_prefix="/api")
 
     return app
